@@ -7,6 +7,7 @@ import { SYMBOLS } from '@/lib/symbols';
 import { useDataFetcher } from '@/lib/hooks';
 import { startFpsMonitor, stopFpsMonitor } from '@/lib/fpsMonitor';
 import { chartStore } from '@/lib/store';
+import CompareOverlay from '@/components/CompareOverlay';
 
 const INTERVALS: { label: string; value: ChartInterval }[] = [
   { label: '1m', value: '1m' },
@@ -25,6 +26,7 @@ const GRID_OPTIONS = [
 export default function HomePage() {
   const [interval, setInterval] = useState<ChartInterval>('5m');
   const [gridCols, setGridCols] = useState(4);
+  const [isCompareMode, setIsCompareMode] = useState(false);
   const { isLoading, lastUpdate, error, refetch } = useDataFetcher(SYMBOLS, interval);
 
   // FPS monitor — dev only
@@ -58,6 +60,18 @@ export default function HomePage() {
 
           {/* ── Center Controls ── */}
           <div className="header-controls">
+            {/* Compare Mode */}
+            <button
+              className="control-action-btn"
+              onClick={() => setIsCompareMode(true)}
+              title="Compare any two charts side-by-side"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-blue)', borderColor: 'var(--accent-blue)' }}
+            >
+              ◫ Compare
+            </button>
+
+            <div className="fs-divider" style={{ margin: '0 8px', height: '24px' }} />
+
             {/* Timeframe */}
             <div className="control-group">
               <span className="control-label">Timeframe</span>
@@ -130,6 +144,11 @@ export default function HomePage() {
       <footer className="footer">
         Data provided by Yahoo Finance • {SYMBOLS.length} charts • Auto-refresh every 30s
       </footer>
+
+      {/* ── Compare Overlay ── */}
+      {isCompareMode && (
+        <CompareOverlay onClose={() => setIsCompareMode(false)} />
+      )}
     </div>
   );
 }
