@@ -169,13 +169,13 @@ export default function ChartCard({ symbol: initialSymbol }: ChartCardProps) {
         }));
 
         const sma20Data = calculateSMA(candles, 20).map((d) => ({
-          time: d.time as Time.Utc, value: d.value,
+          time: d.time as Time, value: d.value,
         }));
         const sma50Data = calculateSMA(candles, 50).map((d) => ({
-          time: d.time as Time.Utc, value: d.value,
+          time: d.time as Time, value: d.value,
         }));
         const rsiData = calculateRSI(candles).map((d) => ({
-          time: d.time as Time.Utc, value: d.value,
+          time: d.time as Time, value: d.value,
         }));
 
         if (!initializedRef.current) {
@@ -266,7 +266,7 @@ export default function ChartCard({ symbol: initialSymbol }: ChartCardProps) {
     });
 
     const rsiLine = rsiChart.addSeries(LineSeries, {
-      color: '#06b6d4', lineWidth: 1.5,
+      color: '#06b6d4', lineWidth: 2,
       crosshairMarkerVisible: false, priceLineVisible: false, lastValueVisible: true,
       autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
     });
