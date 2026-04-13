@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useCallback } from 'react';
-import { IChartApi, ISeriesApi } from 'lightweight-charts';
+import { IChartApi } from 'lightweight-charts';
 import { CandleData, ChartInterval } from '@/lib/types';
 import { calculateDailyChange } from '@/lib/indicators';
 
@@ -31,6 +31,13 @@ const INTERVALS: { label: string; value: ChartInterval }[] = [
   { label: '1D', value: '1d' },
 ];
 
+function formatVolume(vol: number): string {
+  if (vol >= 10_000_000) return (vol / 10_000_000).toFixed(2) + ' Cr';
+  if (vol >= 100_000) return (vol / 100_000).toFixed(2) + ' L';
+  if (vol >= 1_000) return (vol / 1_000).toFixed(1) + ' K';
+  return String(vol);
+}
+
 export default function FullscreenToolbar({
   candles,
   chartRef,
@@ -41,6 +48,22 @@ export default function FullscreenToolbar({
   onClose,
 }: FullscreenToolbarProps) {
   const ohlcRef = useRef<HTMLDivElement>(null);
+
+  const renderOHLC = useCallback((c: {
+    open: number; high: number; low: number; close: number;
+    volume?: number; time?: number;
+  }) => {
+    if (!ohlcRef.current) return;
+    const isUp = c.close >= c.open;
+    const cls = isUp ? 'positive' : 'negative';
+    ohlcRef.current.innerHTML = `
+      <span class="ohlc-item">O <span class="ohlc-val ${cls}">${c.open.toFixed(2)}</span></span>
+      <span class="ohlc-item">H <span class="ohlc-val ${cls}">${c.high.toFixed(2)}</span></span>
+      <span class="ohlc-item">L <span class="ohlc-val ${cls}">${c.low.toFixed(2)}</span></span>
+      <span class="ohlc-item">C <span class="ohlc-val ${cls}">${c.close.toFixed(2)}</span></span>
+      ${c.volume ? `<span class="ohlc-item">Vol <span class="ohlc-val">${formatVolume(c.volume)}</span></span>` : ''}
+    `;
+  }, []);
 
   // ─── OHLCV display on crosshair move ─────────────────────────────
   useEffect(() => {
@@ -85,23 +108,7 @@ export default function FullscreenToolbar({
     return () => {
       try { chart.unsubscribeCrosshairMove(handleCrosshairMove); } catch { /* unmounted */ }
     };
-  }, [chartRef, candles]);
-
-  const renderOHLC = useCallback((c: {
-    open: number; high: number; low: number; close: number;
-    volume?: number; time?: number;
-  }) => {
-    if (!ohlcRef.current) return;
-    const isUp = c.close >= c.open;
-    const cls = isUp ? 'positive' : 'negative';
-    ohlcRef.current.innerHTML = `
-      <span class="ohlc-item">O <span class="ohlc-val ${cls}">${c.open.toFixed(2)}</span></span>
-      <span class="ohlc-item">H <span class="ohlc-val ${cls}">${c.high.toFixed(2)}</span></span>
-      <span class="ohlc-item">L <span class="ohlc-val ${cls}">${c.low.toFixed(2)}</span></span>
-      <span class="ohlc-item">C <span class="ohlc-val ${cls}">${c.close.toFixed(2)}</span></span>
-      ${c.volume ? `<span class="ohlc-item">Vol <span class="ohlc-val">${formatVolume(c.volume)}</span></span>` : ''}
-    `;
-  }, []);
+  }, [chartRef, candles, renderOHLC]);
 
   // Day stats
   const daily = candles.length > 0 ? calculateDailyChange(candles) : null;
@@ -200,11 +207,4 @@ export default function FullscreenToolbar({
       </div>
     </>
   );
-}
-
-function formatVolume(vol: number): string {
-  if (vol >= 10_000_000) return (vol / 10_000_000).toFixed(2) + ' Cr';
-  if (vol >= 100_000) return (vol / 100_000).toFixed(2) + ' L';
-  if (vol >= 1_000) return (vol / 1_000).toFixed(1) + ' K';
-  return String(vol);
 }

@@ -11,8 +11,12 @@ export function useSymbolData(symbol: string): SymbolState | undefined {
   );
 
   useEffect(() => {
+    // Re-sync when `symbol` changes (initial useState only runs once per mount).
     const current = chartStore.get(symbol);
-    if (current) setState(current);
+    if (current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- external store snapshot when symbol changes
+      setState(current);
+    }
 
     const unsubscribe = chartStore.subscribe(symbol, (_sym, newState) => {
       setState(newState);
@@ -38,6 +42,7 @@ export function useDataFetcher(
   const [error, setError] = useState<string | null>(null);
   const fetchingRef = useRef(false);
   const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const MAX_RETRIES = 3;
   const RETRY_DELAY = 5_000;
 
@@ -48,7 +53,7 @@ export function useDataFetcher(
     try {
       const symbolsParam = symbols.join(',');
       const res = await fetch(
-        `/api/charts?symbols=${symbolsParam}&interval=${interval}`
+        `/api/charts?symbols=${encodeURIComponent(symbolsParam)}&interval=${encodeURIComponent(interval)}`
       );
 
       if (!res.ok) {
@@ -58,6 +63,10 @@ export function useDataFetcher(
       const json = await res.json();
 
       if (json.success && json.data) {
+        if (retryTimeoutRef.current) {
+          clearTimeout(retryTimeoutRef.current);
+          retryTimeoutRef.current = null;
+        }
         for (const symbol of symbols) {
           const symbolData = json.data[symbol];
           if (symbolData) {
@@ -67,15 +76,30 @@ export function useDataFetcher(
         setLastUpdate(new Date().toLocaleTimeString());
         setError(null);
         retryCountRef.current = 0;
+      } else {
+        const msg =
+          typeof json.error === 'string' ? json.error : 'Failed to load chart data';
+        setError(msg);
+        if (retryCountRef.current < MAX_RETRIES) {
+          retryCountRef.current++;
+          if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+          retryTimeoutRef.current = setTimeout(() => {
+            retryTimeoutRef.current = null;
+            void fetchData();
+          }, RETRY_DELAY * retryCountRef.current);
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Network error';
       setError(msg);
 
-      // Retry with backoff
       if (retryCountRef.current < MAX_RETRIES) {
         retryCountRef.current++;
-        setTimeout(fetchData, RETRY_DELAY * retryCountRef.current);
+        if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = setTimeout(() => {
+          retryTimeoutRef.current = null;
+          void fetchData();
+        }, RETRY_DELAY * retryCountRef.current);
       }
     } finally {
       setIsLoading(false);
@@ -84,9 +108,15 @@ export function useDataFetcher(
   }, [symbols, interval]);
 
   useEffect(() => {
-    fetchData();
-    const timer = setInterval(fetchData, refreshMs);
-    return () => clearInterval(timer);
+    void fetchData();
+    const timer = setInterval(() => void fetchData(), refreshMs);
+    return () => {
+      clearInterval(timer);
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+    };
   }, [fetchData, refreshMs]);
 
   return { isLoading, lastUpdate, error, refetch: fetchData };

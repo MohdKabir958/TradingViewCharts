@@ -27,6 +27,9 @@ export default function HomePage() {
   const [interval, setInterval] = useState<ChartInterval>('5m');
   const [gridCols, setGridCols] = useState(4);
   const [isCompareMode, setIsCompareMode] = useState(false);
+  const [compareSymbols, setCompareSymbols] = useState<[string, string]>(
+    [SYMBOLS[0], SYMBOLS[1] || SYMBOLS[0]]
+  );
   const { isLoading, lastUpdate, error, refetch } = useDataFetcher(SYMBOLS, interval);
 
   // FPS monitor — dev only
@@ -137,7 +140,7 @@ export default function HomePage() {
 
       {/* ── Chart Grid ── */}
       <main>
-        <MultiChart symbols={SYMBOLS} />
+        <MultiChart symbols={SYMBOLS} interval={interval} />
       </main>
 
       {/* ── Footer ── */}
@@ -147,7 +150,12 @@ export default function HomePage() {
 
       {/* ── Compare Overlay ── */}
       {isCompareMode && (
-        <CompareOverlay onClose={() => setIsCompareMode(false)} />
+        <CompareOverlay
+          onClose={() => setIsCompareMode(false)}
+          initialSymbols={compareSymbols}
+          onSymbolsChange={setCompareSymbols}
+          interval={interval}
+        />
       )}
     </div>
   );

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchMultipleSymbols } from '@/lib/dataProvider';
-import { ChartInterval, DEFAULT_SYMBOLS } from '@/lib/types';
+import { parseChartSymbols } from '@/lib/apiLimits';
+import { ChartInterval } from '@/lib/types';
+import { SYMBOLS } from '@/lib/symbols';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,11 +10,15 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
 
-    // Parse symbols from query params, or use defaults
     const symbolsParam = searchParams.get('symbols');
-    const symbols = symbolsParam
-      ? symbolsParam.split(',').map((s) => s.trim().toUpperCase())
-      : DEFAULT_SYMBOLS;
+    const symbols = parseChartSymbols(symbolsParam, SYMBOLS);
+
+    if (symbols.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'No valid symbols. Use comma-separated tickers (max 32).' },
+        { status: 400 }
+      );
+    }
 
     // Parse interval, default to 5m
     const interval = (searchParams.get('interval') as ChartInterval) || '5m';

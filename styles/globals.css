@@ -324,10 +324,61 @@ body {
 .chart-card-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--gap-md) var(--gap-lg);
+  gap: 4px;
+  min-width: 0;
+  padding: var(--gap-sm) var(--gap-md);
   border-bottom: 1px solid var(--border-color);
   background: rgba(0, 0, 0, 0.15);
+  overflow: visible;
+}
+
+.chart-card-header > .symbol-selector {
+  flex-shrink: 0;
+}
+
+/* Scroll the rest of the header; symbol stays fixed so its dropdown is not clipped here */
+.chart-card-header-xscroll {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.45) transparent;
+}
+
+.chart-card-header-xscroll::-webkit-scrollbar {
+  height: 5px;
+}
+
+.chart-card-header-xscroll::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.45);
+  border-radius: 3px;
+}
+
+.chart-card-header-xscroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chart-card-header-track {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  min-width: 100%;
+  box-sizing: border-box;
+}
+
+.chart-card-header-track > :not(.chart-header-spacer) {
+  flex-shrink: 0;
+}
+
+.chart-header-spacer {
+  flex: 1 1 0;
+  flex-shrink: 1;
+  min-width: 0;
+  width: 0;
+  height: 1px;
+  align-self: stretch;
 }
 
 .chart-symbol {
@@ -339,9 +390,10 @@ body {
 
 .chart-price {
   font-family: var(--font-mono);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 500;
-  margin-left: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .chart-price.positive {
@@ -352,44 +404,15 @@ body {
   color: var(--accent-red);
 }
 
-/* ─── Daily Change Badge ──────────────────────────────────────────── */
-.daily-change-badge {
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
+.chart-price-change {
+  margin-left: 6px;
+  font-size: 0.7rem;
   font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 3px;
+  white-space: nowrap;
 }
 
-.daily-change-badge.positive {
-  color: var(--accent-green);
-  background: rgba(16, 185, 129, 0.12);
-}
-
-.daily-change-badge.negative {
-  color: var(--accent-red);
-  background: rgba(239, 68, 68, 0.12);
-}
-
-/* ─── RSI Badge ───────────────────────────────────────────────────── */
-.rsi-badge {
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 3px;
-  color: var(--text-muted);
-  background: rgba(100, 116, 139, 0.12);
-}
-
-.rsi-badge.overbought {
-  color: var(--accent-red);
-  background: rgba(239, 68, 68, 0.12);
-}
-
-.rsi-badge.oversold {
-  color: var(--accent-green);
-  background: rgba(16, 185, 129, 0.12);
+.chart-price-arrow {
+  margin-right: 2px;
 }
 
 /* ─── Chart Body ──────────────────────────────────────────────────── */
@@ -420,9 +443,19 @@ body {
 
 .chart-container-rsi {
   width: 100%;
-  height: 50px;
+  height: 72px;
+  min-height: 72px;
   position: relative;
   border-top: 1px solid var(--border-color);
+}
+
+/* Dedicated mount: Lightweight Charts measures this node; keep it empty besides library DOM. */
+.chart-rsi-host {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 .rsi-label {
@@ -505,27 +538,40 @@ body {
 .symbol-selector {
   position: relative;
   z-index: 10;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .symbol-button {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   background: none;
   border: none;
   color: var(--text-primary);
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   font-family: var(--font-sans);
   letter-spacing: 0.02em;
   cursor: pointer;
   padding: 2px 4px;
   border-radius: var(--radius-sm);
   transition: background var(--transition-fast);
+  min-width: 0;
+  max-width: 100px;
+  overflow: hidden;
 }
 
 .symbol-button:hover {
   background: var(--bg-surface);
+}
+
+.symbol-button-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .symbol-arrow {
@@ -539,14 +585,14 @@ body {
 }
 
 .symbol-input {
-  width: 140px;
+  width: 120px;
   background: var(--bg-surface);
   border: 1px solid var(--accent-blue);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-family: var(--font-sans);
-  padding: 4px 8px;
+  padding: 3px 7px;
   outline: none;
   box-shadow: 0 0 8px rgba(59, 130, 246, 0.2);
 }
@@ -624,11 +670,12 @@ body {
   white-space: nowrap;
 }
 
-/* ─── Chart Controls ──────────────────────────────────────────────── */
+/* ─── Chart Controls + ⋮ menu (fit / crosshair / fullscreen) ──────── */
 .chart-controls {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex-shrink: 0;
 }
 
 .chart-ctrl-btn {
@@ -653,9 +700,92 @@ body {
   color: var(--text-primary);
 }
 
-.chart-ctrl-btn.active {
+.chart-controls-menu {
+  position: relative;
+  margin-left: 2px;
+}
+
+.chart-menu-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background var(--transition-fast), color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.chart-menu-trigger:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+.chart-menu-dots {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.chart-menu-dots span {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.chart-menu-dropdown {
+  position: fixed;
+  min-width: 188px;
+  padding: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card), 0 12px 40px rgba(0, 0, 0, 0.35);
+  z-index: 10050;
+}
+
+.chart-menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+.chart-menu-item:hover {
+  background: var(--bg-surface);
+}
+
+.chart-menu-item.active {
   color: var(--accent-blue);
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.chart-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-color);
+  border: none;
+  padding: 0;
 }
 
 /* ─── Fullscreen Mode ─────────────────────────────────────────────── */
@@ -692,6 +822,16 @@ body {
   font-size: 0.9rem;
 }
 
+.chart-card-fullscreen .chart-menu-trigger {
+  width: 34px;
+  height: 34px;
+}
+
+.chart-card-fullscreen .chart-menu-dots span {
+  width: 4px;
+  height: 4px;
+}
+
 .chart-card-fullscreen .chart-symbol,
 .chart-card-fullscreen .symbol-button {
   font-size: 1.1rem;
@@ -701,10 +841,8 @@ body {
   font-size: 1rem;
 }
 
-.chart-card-fullscreen .daily-change-badge,
-.chart-card-fullscreen .rsi-badge {
-  font-size: 0.8rem;
-  padding: 3px 10px;
+.chart-card-fullscreen .chart-price-change {
+  font-size: 0.85rem;
 }
 
 .chart-card-fullscreen .legend-item {
@@ -866,17 +1004,6 @@ body {
 .fs-ohlc {
   display: flex;
   gap: var(--gap-lg);
-}
-
-.ohlc-item {
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-}
-
-.ohlc-val {
-  font-weight: 600;
-  color: var(--text-secondary);
 }
 
 .ohlc-val.positive { color: var(--accent-green); }

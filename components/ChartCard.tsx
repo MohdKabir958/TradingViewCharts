@@ -16,6 +16,8 @@ import FullscreenToolbar from './FullscreenToolbar';
 
 interface ChartCardProps {
   symbol: string;
+  globalInterval?: ChartInterval;
+  onSymbolChange?: (symbol: string) => void;
 }
 
 interface IndicatorToggles {
@@ -44,11 +46,17 @@ function throttle<T extends (...args: Parameters<T>) => void>(fn: T, ms: number)
   }) as T;
 }
 
-export default function ChartCard({ symbol: initialSymbol }: ChartCardProps) {
+// Detect currency symbol from ticker suffix
+function getCurrencySymbol(symbol: string): string {
+  if (symbol.endsWith('.NS') || symbol.endsWith('.BO')) return '₹';
+  return '$';
+}
+
+export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m', onSymbolChange }: ChartCardProps) {
   const [activeSymbol, setActiveSymbol] = useState(initialSymbol);
   const [crosshairEnabled, setCrosshairEnabled] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [chartInterval, setChartInterval] = useState<ChartInterval>('5m');
+  const [chartInterval, setChartInterval] = useState<ChartInterval>(globalInterval);
   const [indicators, setIndicators] = useState<IndicatorToggles>({
     sma20: true, sma50: true, volume: true, rsi: true,
   });
@@ -61,17 +69,27 @@ export default function ChartCard({ symbol: initialSymbol }: ChartCardProps) {
   const sma20SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const sma50SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
 
-  const rsiContainerRef = useRef<HTMLDivElement>(null);
+  /** Outer RSI pane (show/hide). Inner host must be chart-only for Lightweight Charts sizing. */
+  const rsiPanelRef = useRef<HTMLDivElement>(null);
+  const rsiChartHostRef = useRef<HTMLDivElement>(null);
   const rsiChartRef = useRef<IChartApi | null>(null);
   const rsiSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
 
   const priceRef = useRef<HTMLSpanElement>(null);
-  const dailyChangeRef = useRef<HTMLSpanElement>(null);
-  const rsiBadgeRef = useRef<HTMLSpanElement>(null);
 
   const lastCandleCountRef = useRef<number>(0);
+  const rsiPointCountRef = useRef<number>(0);
   const initializedRef = useRef(false);
   const unsubscribeRef = useRef<(() => void) | null>(null);
+
+  // ─── Sync global interval → per-card interval ─────────────────────
+  useEffect(() => {
+    // Only sync when NOT in fullscreen (user may have overridden it there)
+    if (!isFullscreen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- mirror dashboard timeframe when not in fullscreen override
+      setChartInterval(globalInterval);
+    }
+  }, [globalInterval, isFullscreen]);
 
   // ─── Indicator visibility ────────────────────────────────────────
   useEffect(() => {
@@ -99,9 +117,9 @@ export default function ChartCard({ symbol: initialSymbol }: ChartCardProps) {
   }, [indicators.volume]);
 
   useEffect(() => {
-    const rsiContainer = rsiContainerRef.current;
-    if (rsiContainer) {
-      rsiContainer.style.display = indicators.rsi ? 'block' : 'none';
+    const panel = rsiPanelRef.current;
+    if (panel) {
+      panel.style.display = indicators.rsi ? 'block' : 'none';
     }
   }, [indicators.rsi]);
 
@@ -114,42 +132,24 @@ export default function ChartCard({ symbol: initialSymbol }: ChartCardProps) {
     if (candles.length === 0) return;
 
     const latest = candles[candles.length - 1];
-    const previous = candles.length > 1 ? candles[candles.length - 2] : null;
     const price = latest.close.toFixed(2);
-    const change = previous
-      ? ((latest.close - previous.close) / previous.close) * 100
-      : 0;
-    const isPositive = change >= 0;
+    const daily = calculateDailyChange(candles);
+    const dPos = daily ? daily.changePercent >= 0 : true;
 
     if (priceRef.current) {
-      priceRef.current.className = `chart-price ${isPositive ? 'positive' : 'negative'}`;
-      priceRef.current.innerHTML = `₹${price}<span style="margin-left:6px;font-size:0.7rem">${isPositive ? '▲' : '▼'} ${Math.abs(change).toFixed(2)}%</span>`;
-    }
-
-    if (dailyChangeRef.current) {
-      const daily = calculateDailyChange(candles);
-      if (daily) {
-        const dPos = daily.changePercent >= 0;
-        dailyChangeRef.current.className = `daily-change-badge ${dPos ? 'positive' : 'negative'}`;
-        dailyChangeRef.current.textContent = `${dPos ? '+' : ''}${daily.changePercent.toFixed(2)}%`;
-      }
-    }
-
-    if (rsiBadgeRef.current) {
-      const rsiData = calculateRSI(candles);
-      if (rsiData.length > 0) {
-        const rsiValue = rsiData[rsiData.length - 1].value;
-        let rsiColor = 'neutral';
-        if (rsiValue >= 70) rsiColor = 'overbought';
-        else if (rsiValue <= 30) rsiColor = 'oversold';
-        rsiBadgeRef.current.className = `rsi-badge ${rsiColor}`;
-        rsiBadgeRef.current.textContent = `RSI ${Math.round(rsiValue)}`;
-      }
+      const currencySymbol = getCurrencySymbol(activeSymbol);
+      priceRef.current.className = `chart-price ${dPos ? 'positive' : 'negative'}`;
+      const pct =
+        daily != null
+          ? `${daily.changePercent >= 0 ? '+' : ''}${daily.changePercent.toFixed(2)}%`
+          : '—';
+      const arrow = daily != null ? (daily.changePercent >= 0 ? '▲' : '▼') : '';
+      priceRef.current.innerHTML = `${currencySymbol}${price}<span class="chart-price-change"><span class="chart-price-arrow" aria-hidden="true">${arrow}</span> ${pct}</span>`;
     }
 
     // Store candles for fullscreen toolbar
     setCurrentCandles(candles);
-  }, []);
+  }, [activeSymbol]);
 
   const createHandler = useCallback(() => {
     return throttle((_sym: string, state: SymbolState) => {
@@ -184,6 +184,7 @@ export default function ChartCard({ symbol: initialSymbol }: ChartCardProps) {
           sma20SeriesRef.current?.setData(sma20Data);
           sma50SeriesRef.current?.setData(sma50Data);
           rsiSeriesRef.current?.setData(rsiData);
+          rsiPointCountRef.current = rsiData.length;
           chartRef.current.timeScale().fitContent();
           rsiChartRef.current?.timeScale().fitContent();
           initializedRef.current = true;
@@ -194,7 +195,23 @@ export default function ChartCard({ symbol: initialSymbol }: ChartCardProps) {
           if (volumeData.length > 0) volumeSeriesRef.current?.update(volumeData[volumeData.length - 1]);
           if (sma20Data.length > 0) sma20SeriesRef.current?.update(sma20Data[sma20Data.length - 1]);
           if (sma50Data.length > 0) sma50SeriesRef.current?.update(sma50Data[sma50Data.length - 1]);
-          if (rsiData.length > 0) rsiSeriesRef.current?.update(rsiData[rsiData.length - 1]);
+          // RSI needs full setData when the series was empty (<15 bars on first paint) or bar count changes;
+          // update(last) alone never draws a line on an empty series.
+          const rsi = rsiSeriesRef.current;
+          if (rsi) {
+            if (rsiData.length === 0) {
+              rsi.setData([]);
+              rsiPointCountRef.current = 0;
+            } else if (
+              rsiPointCountRef.current === 0 ||
+              rsiData.length !== rsiPointCountRef.current
+            ) {
+              rsi.setData(rsiData);
+              rsiPointCountRef.current = rsiData.length;
+            } else {
+              rsi.update(rsiData[rsiData.length - 1]);
+            }
+          }
           lastCandleCountRef.current = candles.length;
         }
 
@@ -205,7 +222,7 @@ export default function ChartCard({ symbol: initialSymbol }: ChartCardProps) {
 
   // ─── Initialize charts ONCE ──────────────────────────────────────
   useEffect(() => {
-    if (!containerRef.current || !rsiContainerRef.current) return;
+    if (!containerRef.current || !rsiChartHostRef.current) return;
 
     const chart = createChart(containerRef.current, {
       autoSize: true,
@@ -250,7 +267,7 @@ export default function ChartCard({ symbol: initialSymbol }: ChartCardProps) {
     sma50SeriesRef.current = sma50;
 
     // RSI chart
-    const rsiChart = createChart(rsiContainerRef.current, {
+    const rsiChart = createChart(rsiChartHostRef.current, {
       autoSize: true,
       layout: { background: { color: 'transparent' }, textColor: '#64748b', fontSize: 9, attributionLogo: false },
       grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(100, 116, 139, 0.1)', style: 2 } },
@@ -286,30 +303,7 @@ export default function ChartCard({ symbol: initialSymbol }: ChartCardProps) {
     };
   }, []);
 
-  // ─── Subscribe to active symbol ──────────────────────────────────
-  useEffect(() => {
-    if (unsubscribeRef.current) { unsubscribeRef.current(); unsubscribeRef.current = null; }
-    initializedRef.current = false;
-    lastCandleCountRef.current = 0;
-    seriesRef.current?.setData([]);
-    volumeSeriesRef.current?.setData([]);
-    sma20SeriesRef.current?.setData([]);
-    sma50SeriesRef.current?.setData([]);
-    rsiSeriesRef.current?.setData([]);
-    if (priceRef.current) { priceRef.current.innerHTML = '...'; priceRef.current.className = 'chart-price'; }
-    if (dailyChangeRef.current) dailyChangeRef.current.textContent = '';
-    if (rsiBadgeRef.current) rsiBadgeRef.current.textContent = '';
-
-    const handler = createHandler();
-    const existing = chartStore.get(activeSymbol);
-    if (existing && existing.candles.length > 0) handler(activeSymbol, existing);
-    else fetchSymbolData(activeSymbol, chartInterval);
-    unsubscribeRef.current = chartStore.subscribe(activeSymbol, handler);
-
-    return () => { if (unsubscribeRef.current) { unsubscribeRef.current(); unsubscribeRef.current = null; } };
-  }, [activeSymbol, createHandler, chartInterval]);
-
-  const fetchSymbolData = async (symbol: string, interval: string) => {
+  const fetchSymbolData = useCallback(async (symbol: string, interval: string) => {
     try {
       const res = await fetch(`/api/charts?symbols=${symbol}&interval=${interval}`);
       const json = await res.json();
@@ -317,15 +311,43 @@ export default function ChartCard({ symbol: initialSymbol }: ChartCardProps) {
         chartStore.update(symbol, json.data[symbol].candles, json.data[symbol].error);
       }
     } catch { /* handled */ }
-  };
+  }, []);
 
-  const handleSymbolChange = (s: string) => { if (s !== activeSymbol) setActiveSymbol(s); };
+  // ─── Subscribe to active symbol ──────────────────────────────────
+  useEffect(() => {
+    if (unsubscribeRef.current) { unsubscribeRef.current(); unsubscribeRef.current = null; }
+    initializedRef.current = false;
+    lastCandleCountRef.current = 0;
+    rsiPointCountRef.current = 0;
+    seriesRef.current?.setData([]);
+    volumeSeriesRef.current?.setData([]);
+    sma20SeriesRef.current?.setData([]);
+    sma50SeriesRef.current?.setData([]);
+    rsiSeriesRef.current?.setData([]);
+    if (priceRef.current) { priceRef.current.innerHTML = '...'; priceRef.current.className = 'chart-price'; }
+    const handler = createHandler();
+    const existing = chartStore.get(activeSymbol);
+    if (existing && existing.candles.length > 0) handler(activeSymbol, existing);
+    else fetchSymbolData(activeSymbol, chartInterval);
+    unsubscribeRef.current = chartStore.subscribe(activeSymbol, handler);
+
+    return () => { if (unsubscribeRef.current) { unsubscribeRef.current(); unsubscribeRef.current = null; } };
+  }, [activeSymbol, createHandler, chartInterval, fetchSymbolData]);
+
+
+  const handleSymbolChange = (s: string) => {
+    if (s !== activeSymbol) {
+      setActiveSymbol(s);
+      onSymbolChange?.(s);
+    }
+  };
 
   // ─── Fullscreen interval change ──────────────────────────────────
   const handleIntervalChange = useCallback((newInterval: ChartInterval) => {
     setChartInterval(newInterval);
     initializedRef.current = false;
     lastCandleCountRef.current = 0;
+    rsiPointCountRef.current = 0;
     // Clear and refetch with new interval
     seriesRef.current?.setData([]);
     volumeSeriesRef.current?.setData([]);
@@ -333,15 +355,15 @@ export default function ChartCard({ symbol: initialSymbol }: ChartCardProps) {
     sma50SeriesRef.current?.setData([]);
     rsiSeriesRef.current?.setData([]);
     fetchSymbolData(activeSymbol, newInterval);
-  }, [activeSymbol]);
+  }, [activeSymbol, fetchSymbolData]);
 
   const handleToggleCrosshair = useCallback(() => {
     if (!chartRef.current) return;
     const next = !crosshairEnabled;
     setCrosshairEnabled(next);
-    chartRef.current.applyOptions({
-      crosshair: { mode: next ? CrosshairMode.Normal : CrosshairMode.Hidden },
-    });
+    const mode = next ? CrosshairMode.Normal : CrosshairMode.Hidden;
+    chartRef.current.applyOptions({ crosshair: { mode } });
+    rsiChartRef.current?.applyOptions({ crosshair: { mode } });
   }, [crosshairEnabled]);
 
   const handleToggleFullscreen = useCallback(() => {
@@ -363,14 +385,17 @@ export default function ChartCard({ symbol: initialSymbol }: ChartCardProps) {
     <div className={`chart-card ${isFullscreen ? 'chart-card-fullscreen' : ''}`} id={`chart-card-${activeSymbol}`}>
       <div className="chart-card-header">
         <SymbolSelector currentSymbol={activeSymbol} onSelect={handleSymbolChange} />
-        <span className="daily-change-badge" ref={dailyChangeRef} />
-        <span className="rsi-badge" ref={rsiBadgeRef} />
-        <ChartControls
-          chartRef={chartRef} symbol={activeSymbol}
-          onToggleCrosshair={handleToggleCrosshair} crosshairEnabled={crosshairEnabled}
-          onToggleFullscreen={handleToggleFullscreen} isFullscreen={isFullscreen}
-        />
-        <span className="chart-price" ref={priceRef}>...</span>
+        <div className="chart-card-header-xscroll">
+          <div className="chart-card-header-track">
+            <ChartControls
+              chartRef={chartRef}
+              onToggleCrosshair={handleToggleCrosshair} crosshairEnabled={crosshairEnabled}
+              onToggleFullscreen={handleToggleFullscreen} isFullscreen={isFullscreen}
+            />
+            <span className="chart-header-spacer" aria-hidden />
+            <span className="chart-price" ref={priceRef}>...</span>
+          </div>
+        </div>
       </div>
 
       {/* Fullscreen-only toolbar */}
@@ -393,7 +418,8 @@ export default function ChartCard({ symbol: initialSymbol }: ChartCardProps) {
           {indicators.sma50 && <span className="legend-item" style={{ color: '#8b5cf6' }}>● SMA 50</span>}
         </div>
         <div className="chart-container-main" ref={containerRef} />
-        <div className="chart-container-rsi" ref={rsiContainerRef}>
+        <div className="chart-container-rsi" ref={rsiPanelRef}>
+          <div className="chart-rsi-host" ref={rsiChartHostRef} />
           <span className="rsi-label">RSI 14</span>
         </div>
       </div>

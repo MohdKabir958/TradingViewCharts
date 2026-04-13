@@ -1,14 +1,34 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import ChartCard from './ChartCard';
 import { SYMBOLS } from '@/lib/symbols';
+import { ChartInterval } from '@/lib/types';
 
 interface CompareOverlayProps {
   onClose: () => void;
+  initialSymbols?: [string, string];
+  onSymbolsChange?: (symbols: [string, string]) => void;
+  interval: ChartInterval;
 }
 
-export default function CompareOverlay({ onClose }: CompareOverlayProps) {
+export default function CompareOverlay({
+  onClose,
+  initialSymbols,
+  onSymbolsChange,
+  interval,
+}: CompareOverlayProps) {
+  const [symbolA, setSymbolA] = useState<string>(initialSymbols?.[0] ?? SYMBOLS[0]);
+  const [symbolB, setSymbolB] = useState<string>(initialSymbols?.[1] ?? (SYMBOLS[1] || SYMBOLS[0]));
+
+  // Notify parent whenever a symbol changes so selections survive close/reopen
+  useEffect(() => {
+    onSymbolsChange?.([symbolA, symbolB]);
+  }, [symbolA, symbolB, onSymbolsChange]);
+
+  const handleSelectA = useCallback((s: string) => setSymbolA(s), []);
+  const handleSelectB = useCallback((s: string) => setSymbolB(s), []);
+
   // Prevent scrolling on the body while compare mode is open
   useEffect(() => {
     document.body.style.overflow = 'hidden';
@@ -32,8 +52,8 @@ export default function CompareOverlay({ onClose }: CompareOverlayProps) {
         </button>
       </div>
       <div className="compare-body">
-        <ChartCard symbol={SYMBOLS[0]} />
-        <ChartCard symbol={SYMBOLS[1] || SYMBOLS[0]} />
+        <ChartCard symbol={symbolA} globalInterval={interval} onSymbolChange={handleSelectA} />
+        <ChartCard symbol={symbolB} globalInterval={interval} onSymbolChange={handleSelectB} />
       </div>
     </div>
   );

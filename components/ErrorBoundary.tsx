@@ -22,6 +22,12 @@ export default class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
+  componentDidCatch(error: Error, info: { componentStack: string }) {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('[Chart ErrorBoundary]', error, info.componentStack);
+    }
+  }
+
   render() {
     if (this.state.hasError) {
       return (

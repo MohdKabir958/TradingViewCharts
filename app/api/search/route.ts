@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import YahooFinance from 'yahoo-finance2';
+import { MAX_SEARCH_QUERY_LENGTH } from '@/lib/apiLimits';
 
 const yahooFinance = new YahooFinance();
 
@@ -8,9 +9,10 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const query = searchParams.get('q');
+    const raw = searchParams.get('q');
+    const query = raw?.trim().slice(0, MAX_SEARCH_QUERY_LENGTH) ?? '';
 
-    if (!query || query.length < 1) {
+    if (query.length < 1) {
       return NextResponse.json({ results: [] });
     }
 

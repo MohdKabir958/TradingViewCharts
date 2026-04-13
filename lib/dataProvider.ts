@@ -1,16 +1,17 @@
 import YahooFinance from 'yahoo-finance2';
 import type { ChartResultArrayQuote } from 'yahoo-finance2/modules/chart';
 import { Redis } from '@upstash/redis';
+import { clampGlitchCandles } from './candleSanitize';
 import { CandleData, ChartInterval, SymbolData, MultiSymbolData } from './types';
 
 // ─── Yahoo Finance Client (singleton) ──────────────────────────────
 const yahooFinance = new YahooFinance();
 
-// ─── Upstash Redis Client ──────────────────────────────────────────
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-});
+// ─── Upstash Redis (optional — omit env in dev/small deploys) ─────
+const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+const redis: Redis | null =
+  redisUrl && redisToken ? new Redis({ url: redisUrl, token: redisToken }) : null;
 
 // ─── Cache Configuration ───────────────────────────────────────────
 const CACHE_TTL_SECONDS = 30; // 30 seconds cache lifetime
@@ -61,7 +62,15 @@ function normalizeCandles(quotes: ChartResultArrayQuote[]): CandleData[] {
       low: Number(q.low),
       close: Number(q.close),
       volume: q.volume != null ? Number(q.volume) : undefined,
-    }));
+    }))
+    .filter(
+      (c) =>
+        Number.isFinite(c.time) &&
+        Number.isFinite(c.open) &&
+        Number.isFinite(c.high) &&
+        Number.isFinite(c.low) &&
+        Number.isFinite(c.close)
+    );
 }
 
 // ─── Redis Cache Helpers ───────────────────────────────────────────
@@ -70,9 +79,14 @@ function cacheKey(symbol: string, interval: ChartInterval): string {
 }
 
 async function getFromCache(symbol: string, interval: ChartInterval): Promise<SymbolData | null> {
+  if (!redis) return null;
   try {
     const data = await redis.get<SymbolData>(cacheKey(symbol, interval));
-    return data;
+    if (!data?.candles?.length) return data;
+    return {
+      ...data,
+      candles: clampGlitchCandles(data.candles, interval),
+    };
   } catch (err) {
     console.error(`[Redis] Cache read error for ${symbol}:`, err);
     return null;
@@ -80,6 +94,7 @@ async function getFromCache(symbol: string, interval: ChartInterval): Promise<Sy
 }
 
 async function setToCache(symbol: string, interval: ChartInterval, data: SymbolData): Promise<void> {
+  if (!redis) return;
   try {
     await redis.set(cacheKey(symbol, interval), data, { ex: CACHE_TTL_SECONDS });
   } catch (err) {
@@ -120,7 +135,9 @@ async function fetchSingleSymbol(
         interval: yahooInterval,
       });
 
-      const candles = normalizeCandles(result.quotes);
+      const quotes = result?.quotes;
+      const raw = normalizeCandles(Array.isArray(quotes) ? quotes : []);
+      const candles = clampGlitchCandles(raw, interval);
 
       const symbolData: SymbolData = {
         symbol,
@@ -193,6 +210,7 @@ export async function fetchSymbolData(
 
 // ─── Clear Cache ───────────────────────────────────────────────────
 export async function clearCache(symbols?: string[], interval?: ChartInterval): Promise<void> {
+  if (!redis) return;
   try {
     if (symbols && interval) {
       await Promise.all(symbols.map((s) => redis.del(cacheKey(s, interval))));

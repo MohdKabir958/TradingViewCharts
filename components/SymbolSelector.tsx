@@ -121,9 +121,9 @@ export default function SymbolSelector({ currentSymbol, onSelect }: SymbolSelect
         <button
           className="symbol-button"
           onClick={() => setIsOpen(true)}
-          title="Change stock"
+          title={getDisplayName(currentSymbol)}
         >
-          {getDisplayName(currentSymbol)}
+          <span className="symbol-button-name">{getDisplayName(currentSymbol)}</span>
           <span className="symbol-arrow">▾</span>
         </button>
       )}
