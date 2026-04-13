@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react';
 import {
   createChart, IChartApi, ISeriesApi,
   CandlestickData, Time, CandlestickSeries,
@@ -50,6 +50,26 @@ function throttle<T extends (...args: Parameters<T>) => void>(fn: T, ms: number)
 function getCurrencySymbol(symbol: string): string {
   if (symbol.endsWith('.NS') || symbol.endsWith('.BO')) return '₹';
   return '$';
+}
+
+/** Absolute `.chart-rsi-host` often reports 0×0 with autoSize; explicit resize is required. */
+function measureRsiHost(host: HTMLDivElement): { width: number; height: number } {
+  const parent = host.parentElement;
+  const width = Math.max(
+    1,
+    Math.floor(host.clientWidth || parent?.clientWidth || 1)
+  );
+  const height = Math.max(
+    48,
+    Math.floor(host.clientHeight || parent?.clientHeight || 72)
+  );
+  return { width, height };
+}
+
+function resizeRsiChartPane(chart: IChartApi | null, host: HTMLDivElement | null) {
+  if (!chart || !host) return;
+  const { width, height } = measureRsiHost(host);
+  chart.resize(width, height, true);
 }
 
 export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m', onSymbolChange }: ChartCardProps) {
@@ -123,6 +143,16 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
     }
   }, [indicators.rsi]);
 
+  // Prod / toggles: `display:none` → `block` does not always trigger ResizeObserver before paint; sync size in layout phase.
+  useLayoutEffect(() => {
+    if (!indicators.rsi) return;
+    const c = rsiChartRef.current;
+    const host = rsiChartHostRef.current;
+    if (!c || !host) return;
+    resizeRsiChartPane(c, host);
+    c.timeScale().fitContent();
+  }, [indicators.rsi]);
+
   const handleToggleIndicator = useCallback((key: keyof IndicatorToggles) => {
     setIndicators((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
@@ -186,10 +216,8 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
           rsiSeriesRef.current?.setData(rsiData);
           rsiPointCountRef.current = rsiData.length;
           chartRef.current.timeScale().fitContent();
-          {
-            const vr = chartRef.current.timeScale().getVisibleRange();
-            if (vr) rsiChartRef.current?.timeScale().setVisibleRange(vr);
-          }
+          resizeRsiChartPane(rsiChartRef.current, rsiChartHostRef.current);
+          rsiChartRef.current?.timeScale().fitContent();
           initializedRef.current = true;
           lastCandleCountRef.current = candles.length;
         } else {
@@ -211,12 +239,8 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
             ) {
               rsi.setData(rsiData);
               rsiPointCountRef.current = rsiData.length;
-              const main = chartRef.current;
-              const rsiC = rsiChartRef.current;
-              if (main && rsiC) {
-                const vr = main.timeScale().getVisibleRange();
-                if (vr) rsiC.timeScale().setVisibleRange(vr);
-              }
+              resizeRsiChartPane(rsiChartRef.current, rsiChartHostRef.current);
+              rsiChartRef.current?.timeScale().fitContent();
             } else {
               rsi.update(rsiData[rsiData.length - 1]);
             }
@@ -275,9 +299,13 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
     sma20SeriesRef.current = sma20;
     sma50SeriesRef.current = sma50;
 
-    // RSI chart
-    const rsiChart = createChart(rsiChartHostRef.current, {
-      autoSize: true,
+    // RSI chart — autoSize + ResizeObserver ignores resize(); host can be 0×0 when absolute. Use fixed size + RO.
+    const rsiHostEl = rsiChartHostRef.current;
+    const rsiBox = measureRsiHost(rsiHostEl);
+    const rsiChart = createChart(rsiHostEl, {
+      width: rsiBox.width,
+      height: rsiBox.height,
+      autoSize: false,
       layout: { background: { color: 'transparent' }, textColor: '#64748b', fontSize: 9, attributionLogo: false },
       grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(100, 116, 139, 0.1)', style: 2 } },
       crosshair: {
@@ -285,30 +313,43 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
         vertLine: { color: 'rgba(59, 130, 246, 0.3)', width: 1, style: 2, labelBackgroundColor: '#1e293b' },
         horzLine: { color: 'rgba(59, 130, 246, 0.3)', width: 1, style: 2, labelBackgroundColor: '#1e293b' },
       },
-      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.05, bottom: 0.05 }, autoScale: false },
+      // autoScale must stay true: with false, v5 ignores series autoscaleInfoProvider and the scale has no range → no line.
+      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.05, bottom: 0.05 }, autoScale: true },
       timeScale: { visible: false },
       handleScroll: false,
       handleScale: false,
     });
 
+    const onRsiHostResize = () => resizeRsiChartPane(rsiChart, rsiHostEl);
+    const rsiResizeObs = new ResizeObserver(() => onRsiHostResize());
+    rsiResizeObs.observe(rsiHostEl);
+    const rsiPaneEl = rsiHostEl.parentElement;
+    if (rsiPaneEl) rsiResizeObs.observe(rsiPaneEl);
+    const syncRsiAfterLayout = () => {
+      resizeRsiChartPane(rsiChart, rsiHostEl);
+      rsiChart.timeScale().fitContent();
+    };
+    requestAnimationFrame(() => {
+      syncRsiAfterLayout();
+      requestAnimationFrame(syncRsiAfterLayout);
+    });
+
     const rsiLine = rsiChart.addSeries(LineSeries, {
       color: '#06b6d4', lineWidth: 2,
       crosshairMarkerVisible: false, priceLineVisible: false, lastValueVisible: true,
-      autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
+      autoscaleInfoProvider: () => ({
+        priceRange: { minValue: 0, maxValue: 100 },
+      }),
     });
 
     rsiChartRef.current = rsiChart;
     rsiSeriesRef.current = rsiLine;
 
-    // Never sync logical indices: candle series has N bars, RSI has ~N−14 points — wrong indices
-    // blank the RSI pane in prod. Sync by *time* instead.
-    const syncRsiTimeToMain = (range: { from: Time; to: Time } | null) => {
-      if (range) rsiChart.timeScale().setVisibleRange(range);
-    };
-    chart.timeScale().subscribeVisibleTimeRangeChange(syncRsiTimeToMain);
+    // RSI uses its own time scale (hidden). fitContent() after data — syncing main↔RSI by
+    // logical or time range broke on Vercel (empty pane). Scroll lock with main is sacrificed.
 
     return () => {
-      chart.timeScale().unsubscribeVisibleTimeRangeChange(syncRsiTimeToMain);
+      rsiResizeObs.disconnect();
       chart.remove(); rsiChart.remove();
       chartRef.current = null; seriesRef.current = null;
       volumeSeriesRef.current = null; sma20SeriesRef.current = null; sma50SeriesRef.current = null;
@@ -382,13 +423,9 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
   const handleToggleFullscreen = useCallback(() => {
     setIsFullscreen((prev) => !prev);
     setTimeout(() => {
-      const main = chartRef.current;
-      const rsi = rsiChartRef.current;
-      main?.timeScale().fitContent();
-      if (main && rsi) {
-        const vr = main.timeScale().getVisibleRange();
-        if (vr) rsi.timeScale().setVisibleRange(vr);
-      }
+      chartRef.current?.timeScale().fitContent();
+      resizeRsiChartPane(rsiChartRef.current, rsiChartHostRef.current);
+      rsiChartRef.current?.timeScale().fitContent();
     }, 350);
   }, []);
 

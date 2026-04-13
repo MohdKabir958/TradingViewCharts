@@ -173,29 +173,40 @@ async function fetchSingleSymbol(
 }
 
 // ─── Multi-Symbol Fetch ────────────────────────────────────────────
+/** Small batches + pause reduce Yahoo 429s and keep Vercel functions under time limits. */
+const YAHOO_BATCH_SIZE = 4;
+const YAHOO_BATCH_PAUSE_MS = 150;
+
 export async function fetchMultipleSymbols(
   symbols: string[],
   interval: ChartInterval = '5m'
 ): Promise<MultiSymbolData> {
-  const results = await Promise.allSettled(
-    symbols.map((symbol) => fetchSingleSymbol(symbol, interval))
-  );
-
   const data: MultiSymbolData = {};
 
-  results.forEach((result, index) => {
-    const symbol = symbols[index];
-    if (result.status === 'fulfilled') {
-      data[symbol] = result.value;
-    } else {
-      data[symbol] = {
-        symbol,
-        candles: [],
-        lastUpdated: Date.now(),
-        error: result.reason?.message || 'Failed to fetch',
-      };
+  for (let i = 0; i < symbols.length; i += YAHOO_BATCH_SIZE) {
+    const slice = symbols.slice(i, i + YAHOO_BATCH_SIZE);
+    const results = await Promise.allSettled(
+      slice.map((symbol) => fetchSingleSymbol(symbol, interval))
+    );
+
+    results.forEach((result, j) => {
+      const symbol = slice[j];
+      if (result.status === 'fulfilled') {
+        data[symbol] = result.value;
+      } else {
+        data[symbol] = {
+          symbol,
+          candles: [],
+          lastUpdated: Date.now(),
+          error: result.reason?.message || 'Failed to fetch',
+        };
+      }
+    });
+
+    if (i + YAHOO_BATCH_SIZE < symbols.length) {
+      await new Promise((r) => setTimeout(r, YAHOO_BATCH_PAUSE_MS));
     }
-  });
+  }
 
   return data;
 }

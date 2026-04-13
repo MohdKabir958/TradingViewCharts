@@ -6,6 +6,9 @@ import { SYMBOLS } from '@/lib/symbols';
 
 export const dynamic = 'force-dynamic';
 
+/** Allow long enough for staggered Yahoo batches (16 symbols). Fluid / Pro on Vercel. */
+export const maxDuration = 60;
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

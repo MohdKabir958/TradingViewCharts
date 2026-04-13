@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { chartStore, SymbolState } from './store';
 
+/** Fewer symbols per /api/charts call avoids Yahoo rate limits and Vercel 10s timeouts. */
+const SYMBOLS_PER_REQUEST = 4;
+
 /**
  * Hook to subscribe to a single symbol's data in the store.
  * Only triggers re-render when THIS symbol's data changes.
@@ -51,34 +54,39 @@ export function useDataFetcher(
     fetchingRef.current = true;
 
     try {
-      const symbolsParam = symbols.join(',');
-      const res = await fetch(
-        `/api/charts?symbols=${encodeURIComponent(symbolsParam)}&interval=${encodeURIComponent(interval)}`
-      );
+      let hadFailure = false;
 
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      for (let i = 0; i < symbols.length; i += SYMBOLS_PER_REQUEST) {
+        if (i > 0) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        const chunk = symbols.slice(i, i + SYMBOLS_PER_REQUEST);
+        const symbolsParam = chunk.join(',');
+        const res = await fetch(
+          `/api/charts?symbols=${encodeURIComponent(symbolsParam)}&interval=${encodeURIComponent(interval)}`
+        );
+
+        if (!res.ok) {
+          hadFailure = true;
+          continue;
+        }
+
+        const json = await res.json();
+
+        if (json.success && json.data) {
+          for (const symbol of chunk) {
+            const symbolData = json.data[symbol];
+            if (symbolData) {
+              chartStore.update(symbol, symbolData.candles, symbolData.error);
+            }
+          }
+        } else {
+          hadFailure = true;
+        }
       }
 
-      const json = await res.json();
-
-      if (json.success && json.data) {
-        if (retryTimeoutRef.current) {
-          clearTimeout(retryTimeoutRef.current);
-          retryTimeoutRef.current = null;
-        }
-        for (const symbol of symbols) {
-          const symbolData = json.data[symbol];
-          if (symbolData) {
-            chartStore.update(symbol, symbolData.candles, symbolData.error);
-          }
-        }
-        setLastUpdate(new Date().toLocaleTimeString());
-        setError(null);
-        retryCountRef.current = 0;
-      } else {
-        const msg =
-          typeof json.error === 'string' ? json.error : 'Failed to load chart data';
+      if (hadFailure) {
+        const msg = 'Some symbols failed to load — retrying…';
         setError(msg);
         if (retryCountRef.current < MAX_RETRIES) {
           retryCountRef.current++;
@@ -88,6 +96,14 @@ export function useDataFetcher(
             void fetchData();
           }, RETRY_DELAY * retryCountRef.current);
         }
+      } else {
+        if (retryTimeoutRef.current) {
+          clearTimeout(retryTimeoutRef.current);
+          retryTimeoutRef.current = null;
+        }
+        setLastUpdate(new Date().toLocaleTimeString());
+        setError(null);
+        retryCountRef.current = 0;
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Network error';
