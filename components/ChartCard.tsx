@@ -186,7 +186,10 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
           rsiSeriesRef.current?.setData(rsiData);
           rsiPointCountRef.current = rsiData.length;
           chartRef.current.timeScale().fitContent();
-          rsiChartRef.current?.timeScale().fitContent();
+          {
+            const vr = chartRef.current.timeScale().getVisibleRange();
+            if (vr) rsiChartRef.current?.timeScale().setVisibleRange(vr);
+          }
           initializedRef.current = true;
           lastCandleCountRef.current = candles.length;
         } else {
@@ -208,6 +211,12 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
             ) {
               rsi.setData(rsiData);
               rsiPointCountRef.current = rsiData.length;
+              const main = chartRef.current;
+              const rsiC = rsiChartRef.current;
+              if (main && rsiC) {
+                const vr = main.timeScale().getVisibleRange();
+                if (vr) rsiC.timeScale().setVisibleRange(vr);
+              }
             } else {
               rsi.update(rsiData[rsiData.length - 1]);
             }
@@ -291,11 +300,15 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
     rsiChartRef.current = rsiChart;
     rsiSeriesRef.current = rsiLine;
 
-    chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-      if (range) rsiChart.timeScale().setVisibleLogicalRange(range);
-    });
+    // Never sync logical indices: candle series has N bars, RSI has ~N−14 points — wrong indices
+    // blank the RSI pane in prod. Sync by *time* instead.
+    const syncRsiTimeToMain = (range: { from: Time; to: Time } | null) => {
+      if (range) rsiChart.timeScale().setVisibleRange(range);
+    };
+    chart.timeScale().subscribeVisibleTimeRangeChange(syncRsiTimeToMain);
 
     return () => {
+      chart.timeScale().unsubscribeVisibleTimeRangeChange(syncRsiTimeToMain);
       chart.remove(); rsiChart.remove();
       chartRef.current = null; seriesRef.current = null;
       volumeSeriesRef.current = null; sma20SeriesRef.current = null; sma50SeriesRef.current = null;
@@ -369,8 +382,13 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
   const handleToggleFullscreen = useCallback(() => {
     setIsFullscreen((prev) => !prev);
     setTimeout(() => {
-      chartRef.current?.timeScale().fitContent();
-      rsiChartRef.current?.timeScale().fitContent();
+      const main = chartRef.current;
+      const rsi = rsiChartRef.current;
+      main?.timeScale().fitContent();
+      if (main && rsi) {
+        const vr = main.timeScale().getVisibleRange();
+        if (vr) rsi.timeScale().setVisibleRange(vr);
+      }
     }, 350);
   }, []);
 
