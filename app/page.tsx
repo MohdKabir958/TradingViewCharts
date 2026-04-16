@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import MultiChart from '@/components/MultiChart';
 import { ChartInterval } from '@/lib/types';
 import { SYMBOLS } from '@/lib/symbols';
@@ -27,6 +28,7 @@ export default function HomePage() {
   const [interval, setInterval] = useState<ChartInterval>('5m');
   const [gridCols, setGridCols] = useState(4);
   const [isCompareMode, setIsCompareMode] = useState(false);
+  const [isDark, setIsDark] = useState(false);
   const [compareSymbols, setCompareSymbols] = useState<[string, string]>(
     [SYMBOLS[0], SYMBOLS[1] || SYMBOLS[0]]
   );
@@ -39,6 +41,11 @@ export default function HomePage() {
       return () => stopFpsMonitor();
     }
   }, []);
+
+  // Theme toggle
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }, [isDark]);
 
   // Apply grid columns as CSS variable
   useEffect(() => {
@@ -63,6 +70,15 @@ export default function HomePage() {
 
           {/* ── Center Controls ── */}
           <div className="header-controls">
+            {/* Indices Page */}
+            <Link
+              href="/indices"
+              className="control-action-btn"
+              style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5, color: 'var(--accent-cyan)' }}
+            >
+              📈 Indices
+            </Link>
+
             {/* Compare Mode */}
             <button
               className="control-action-btn"
@@ -106,6 +122,16 @@ export default function HomePage() {
                 ))}
               </div>
             </div>
+
+            {/* Theme toggle */}
+            <button
+              className="control-action-btn"
+              onClick={() => setIsDark((d) => !d)}
+              title={isDark ? 'Switch to Light' : 'Switch to Dark'}
+              style={{ fontSize: '1rem' }}
+            >
+              {isDark ? '☀️' : '🌙'}
+            </button>
 
             {/* Refresh */}
             <button

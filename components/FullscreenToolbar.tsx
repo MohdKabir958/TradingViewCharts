@@ -6,8 +6,7 @@ import { CandleData, ChartInterval } from '@/lib/types';
 import { calculateDailyChange } from '@/lib/indicators';
 
 interface IndicatorToggles {
-  sma20: boolean;
-  sma50: boolean;
+  bb: boolean;
   volume: boolean;
   rsi: boolean;
 }
@@ -142,20 +141,12 @@ export default function FullscreenToolbar({
           <span className="fs-group-label">Indicators</span>
           <div className="fs-toggles">
             <button
-              className={`fs-toggle ${indicators.sma20 ? 'active' : ''}`}
-              onClick={() => onToggleIndicator('sma20')}
-              style={{ '--toggle-color': '#f59e0b' } as React.CSSProperties}
+              className={`fs-toggle ${indicators.bb ? 'active' : ''}`}
+              onClick={() => onToggleIndicator('bb')}
+              style={{ '--toggle-color': '#2563eb' } as React.CSSProperties}
             >
               <span className="fs-toggle-dot" />
-              SMA 20
-            </button>
-            <button
-              className={`fs-toggle ${indicators.sma50 ? 'active' : ''}`}
-              onClick={() => onToggleIndicator('sma50')}
-              style={{ '--toggle-color': '#8b5cf6' } as React.CSSProperties}
-            >
-              <span className="fs-toggle-dot" />
-              SMA 50
+              BB (20,2)
             </button>
             <button
               className={`fs-toggle ${indicators.volume ? 'active' : ''}`}

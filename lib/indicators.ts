@@ -1,22 +1,36 @@
 import { CandleData } from './types';
 
 /**
- * Calculate Simple Moving Average (SMA)
+ * Calculate Bollinger Bands
+ * Middle Band = 20-period SMA
+ * Upper Band = SMA + (Standard Deviation * multiplier)
+ * Lower Band = SMA - (Standard Deviation * multiplier)
  */
-export function calculateSMA(
+export function calculateBollingerBands(
   candles: CandleData[],
-  period: number
-): { time: number; value: number }[] {
-  const result: { time: number; value: number }[] = [];
+  period: number = 20,
+  multiplier: number = 2
+): { time: number; middle: number; upper: number; lower: number }[] {
+  const result: { time: number; middle: number; upper: number; lower: number }[] = [];
 
   for (let i = period - 1; i < candles.length; i++) {
     let sum = 0;
     for (let j = i - period + 1; j <= i; j++) {
       sum += candles[j].close;
     }
+    const middle = sum / period;
+
+    let varianceSum = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      varianceSum += Math.pow(candles[j].close - middle, 2);
+    }
+    const stdDev = Math.sqrt(varianceSum / period);
+
     result.push({
       time: candles[i].time,
-      value: sum / period,
+      middle,
+      upper: middle + stdDev * multiplier,
+      lower: middle - stdDev * multiplier,
     });
   }
 
