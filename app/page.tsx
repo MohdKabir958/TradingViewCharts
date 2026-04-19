@@ -26,7 +26,7 @@ const GRID_OPTIONS = [
 
 export default function HomePage() {
   const [interval, setInterval] = useState<ChartInterval>('5m');
-  const [gridCols, setGridCols] = useState(4);
+  const [gridCols, setGridCols] = useState(3);
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [isDark, setIsDark] = useState(false);
   const [compareSymbols, setCompareSymbols] = useState<[string, string]>(

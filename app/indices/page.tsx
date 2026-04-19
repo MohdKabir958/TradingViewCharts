@@ -17,6 +17,8 @@ const DEFAULT_INDICES = [
   { symbol: '^CNXFMCG',   name: 'Nifty FMCG',        desc: 'FMCG Sector' },
   { symbol: '^CNXREALTY', name: 'Nifty Realty',      desc: 'Real Estate' },
   { symbol: '^CNXENERGY', name: 'Nifty Energy',      desc: 'Energy Sector' },
+  { symbol: '^CNXPSUBANK',name: 'PSU Bank',          desc: 'Public Sector Banks' },
+  { symbol: 'BSE-OILGAS.BO',name: 'Oil & Gas',       desc: 'Oil & Gas Sector' },
 ];
 
 interface SearchResult {

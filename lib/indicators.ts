@@ -1,30 +1,44 @@
 import { CandleData } from './types';
 
 /**
- * Calculate Bollinger Bands
- * Middle Band = 20-period SMA
- * Upper Band = SMA + (Standard Deviation * multiplier)
- * Lower Band = SMA - (Standard Deviation * multiplier)
+ * Calculate Simple Moving Average (SMA)
  */
+export function calculateSMA(
+  candles: CandleData[],
+  period: number
+): { time: number; value: number }[] {
+  const result: { time: number; value: number }[] = [];
+  for (let i = period - 1; i < candles.length; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += candles[j].close;
+    result.push({ time: candles[i].time, value: sum / period });
+  }
+  return result;
+}
+
+/**
+ * Calculate Bollinger Bands (period=20, multiplier=2)
+ * Returns upper, middle (SMA), and lower band arrays.
+ */
+export interface BBPoint { time: number; upper: number; middle: number; lower: number; }
+
 export function calculateBollingerBands(
   candles: CandleData[],
   period: number = 20,
   multiplier: number = 2
-): { time: number; middle: number; upper: number; lower: number }[] {
-  const result: { time: number; middle: number; upper: number; lower: number }[] = [];
-
+): BBPoint[] {
+  const result: BBPoint[] = [];
   for (let i = period - 1; i < candles.length; i++) {
     let sum = 0;
-    for (let j = i - period + 1; j <= i; j++) {
-      sum += candles[j].close;
-    }
+    for (let j = i - period + 1; j <= i; j++) sum += candles[j].close;
     const middle = sum / period;
 
-    let varianceSum = 0;
+    let variance = 0;
     for (let j = i - period + 1; j <= i; j++) {
-      varianceSum += Math.pow(candles[j].close - middle, 2);
+      const diff = candles[j].close - middle;
+      variance += diff * diff;
     }
-    const stdDev = Math.sqrt(varianceSum / period);
+    const stdDev = Math.sqrt(variance / period);
 
     result.push({
       time: candles[i].time,

@@ -64,6 +64,8 @@ function buildYahooUrl(symbol: string, interval: ChartInterval): string {
   );
 }
 
+const IST_OFFSET_SEC = 5.5 * 60 * 60; // 19800 seconds
+
 // ─── Normalize Yahoo v8 JSON response ─────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normalizeCandles(result: any): CandleData[] {
@@ -110,7 +112,6 @@ function normalizeCandles(result: any): CandleData[] {
 // We find the latest trading date in the fetched candles (in IST UTC+5:30)
 // and discard everything from earlier dates.
 // This gives: live market → today's candles; closed market → last session.
-const IST_OFFSET_SEC = 5.5 * 60 * 60; // 19800 seconds
 
 function filterToLatestTradingDay(candles: CandleData[]): CandleData[] {
   if (candles.length === 0) return candles;
