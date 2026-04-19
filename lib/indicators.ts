@@ -1,55 +1,41 @@
 import { CandleData } from './types';
 
 /**
- * Calculate Simple Moving Average (SMA)
+ * Calculate Bollinger Bands
+ * Middle Band = 20-period SMA
+ * Upper Band = SMA + (Standard Deviation * multiplier)
+ * Lower Band = SMA - (Standard Deviation * multiplier)
  */
-export function calculateSMA(
-  candles: CandleData[],
-  period: number
-): { time: number; value: number }[] {
-  const result: { time: number; value: number }[] = [];
-  for (let i = period - 1; i < candles.length; i++) {
-    let sum = 0;
-    for (let j = i - period + 1; j <= i; j++) sum += candles[j].close;
-    result.push({ time: candles[i].time, value: sum / period });
-  }
-  return result;
-}
-
-/**
- * Calculate Bollinger Bands (period=20, multiplier=2)
- * Returns upper, middle (SMA), and lower band arrays.
- */
-export interface BBPoint { time: number; upper: number; middle: number; lower: number; }
-
 export function calculateBollingerBands(
   candles: CandleData[],
   period: number = 20,
   multiplier: number = 2
-): BBPoint[] {
-  const result: BBPoint[] = [];
+): { time: number; middle: number; upper: number; lower: number }[] {
+  const result: { time: number; middle: number; upper: number; lower: number }[] = [];
+
   for (let i = period - 1; i < candles.length; i++) {
     let sum = 0;
-    for (let j = i - period + 1; j <= i; j++) sum += candles[j].close;
+    for (let j = i - period + 1; j <= i; j++) {
+      sum += candles[j].close;
+    }
     const middle = sum / period;
 
-    let variance = 0;
+    let varianceSum = 0;
     for (let j = i - period + 1; j <= i; j++) {
-      const diff = candles[j].close - middle;
-      variance += diff * diff;
+      varianceSum += Math.pow(candles[j].close - middle, 2);
     }
-    const stdDev = Math.sqrt(variance / period);
+    const stdDev = Math.sqrt(varianceSum / period);
 
     result.push({
       time: candles[i].time,
-      upper: middle + multiplier * stdDev,
       middle,
-      lower: middle - multiplier * stdDev,
+      upper: middle + stdDev * multiplier,
+      lower: middle - stdDev * multiplier,
     });
   }
+
   return result;
 }
-
 
 /**
  * Calculate RSI (Relative Strength Index)

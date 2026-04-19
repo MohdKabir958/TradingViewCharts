@@ -143,7 +143,7 @@ export default function FullscreenToolbar({
             <button
               className={`fs-toggle ${indicators.bb ? 'active' : ''}`}
               onClick={() => onToggleIndicator('bb')}
-              style={{ '--toggle-color': '#3b82f6' } as React.CSSProperties}
+              style={{ '--toggle-color': '#2563eb' } as React.CSSProperties}
             >
               <span className="fs-toggle-dot" />
               BB (20,2)
@@ -151,7 +151,7 @@ export default function FullscreenToolbar({
             <button
               className={`fs-toggle ${indicators.volume ? 'active' : ''}`}
               onClick={() => onToggleIndicator('volume')}
-              style={{ '--toggle-color': '#8b5cf6' } as React.CSSProperties}
+              style={{ '--toggle-color': '#3b82f6' } as React.CSSProperties}
             >
               <span className="fs-toggle-dot" />
               Volume
