@@ -9,7 +9,7 @@ import {
 import { chartStore, SymbolState } from '@/lib/store';
 import { scheduleChartUpdate } from '@/lib/rafBatcher';
 import { CandleData, ChartInterval } from '@/lib/types';
-import { calculateSMA, calculateRSI, calculateDailyChange } from '@/lib/indicators';
+import { calculateBollingerBands, calculateRSI, calculateDailyChange } from '@/lib/indicators';
 import SymbolSelector from './SymbolSelector';
 import ChartControls from './ChartControls';
 import FullscreenToolbar from './FullscreenToolbar';
@@ -21,8 +21,7 @@ interface ChartCardProps {
 }
 
 interface IndicatorToggles {
-  sma20: boolean;
-  sma50: boolean;
+  bb: boolean;
   volume: boolean;
   rsi: boolean;
 }
@@ -78,7 +77,7 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [chartInterval, setChartInterval] = useState<ChartInterval>(globalInterval);
   const [indicators, setIndicators] = useState<IndicatorToggles>({
-    sma20: true, sma50: true, volume: true, rsi: true,
+    bb: true, volume: true, rsi: true,
   });
   const [currentCandles, setCurrentCandles] = useState<CandleData[]>([]);
 
@@ -86,8 +85,9 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const sma20SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const sma50SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const bbUpperSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const bbMidSeriesRef   = useRef<ISeriesApi<'Line'> | null>(null);
+  const bbLowerSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
 
   /** Outer RSI pane (show/hide). Inner host must be chart-only for Lightweight Charts sizing. */
   const rsiPanelRef = useRef<HTMLDivElement>(null);
@@ -111,22 +111,12 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
     }
   }, [globalInterval, isFullscreen]);
 
-  // ─── Indicator visibility ────────────────────────────────────────
+  // ─── BB visibility ───────────────────────────────────────────────
   useEffect(() => {
-    if (sma20SeriesRef.current) {
-      sma20SeriesRef.current.applyOptions({
-        visible: indicators.sma20,
-      });
-    }
-  }, [indicators.sma20]);
-
-  useEffect(() => {
-    if (sma50SeriesRef.current) {
-      sma50SeriesRef.current.applyOptions({
-        visible: indicators.sma50,
-      });
-    }
-  }, [indicators.sma50]);
+    [bbUpperSeriesRef, bbMidSeriesRef, bbLowerSeriesRef].forEach((ref) => {
+      ref.current?.applyOptions({ visible: indicators.bb });
+    });
+  }, [indicators.bb]);
 
   useEffect(() => {
     if (volumeSeriesRef.current) {
@@ -198,12 +188,10 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
           color: c.close >= c.open ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)',
         }));
 
-        const sma20Data = calculateSMA(candles, 20).map((d) => ({
-          time: d.time as Time, value: d.value,
-        }));
-        const sma50Data = calculateSMA(candles, 50).map((d) => ({
-          time: d.time as Time, value: d.value,
-        }));
+        const bbData = calculateBollingerBands(candles);
+        const bbUpperData = bbData.map((d) => ({ time: d.time as Time, value: d.upper }));
+        const bbMidData   = bbData.map((d) => ({ time: d.time as Time, value: d.middle }));
+        const bbLowerData = bbData.map((d) => ({ time: d.time as Time, value: d.lower }));
         const rsiData = calculateRSI(candles).map((d) => ({
           time: d.time as Time, value: d.value,
         }));
@@ -211,8 +199,9 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
         if (!initializedRef.current) {
           seriesRef.current.setData(formatted);
           volumeSeriesRef.current?.setData(volumeData);
-          sma20SeriesRef.current?.setData(sma20Data);
-          sma50SeriesRef.current?.setData(sma50Data);
+          bbUpperSeriesRef.current?.setData(bbUpperData);
+          bbMidSeriesRef.current?.setData(bbMidData);
+          bbLowerSeriesRef.current?.setData(bbLowerData);
           rsiSeriesRef.current?.setData(rsiData);
           rsiPointCountRef.current = rsiData.length;
           chartRef.current.timeScale().fitContent();
@@ -224,8 +213,9 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
           const last = formatted[formatted.length - 1];
           seriesRef.current.update(last);
           if (volumeData.length > 0) volumeSeriesRef.current?.update(volumeData[volumeData.length - 1]);
-          if (sma20Data.length > 0) sma20SeriesRef.current?.update(sma20Data[sma20Data.length - 1]);
-          if (sma50Data.length > 0) sma50SeriesRef.current?.update(sma50Data[sma50Data.length - 1]);
+          if (bbUpperData.length > 0) bbUpperSeriesRef.current?.update(bbUpperData[bbUpperData.length - 1]);
+          if (bbMidData.length > 0) bbMidSeriesRef.current?.update(bbMidData[bbMidData.length - 1]);
+          if (bbLowerData.length > 0) bbLowerSeriesRef.current?.update(bbLowerData[bbLowerData.length - 1]);
           // RSI needs full setData when the series was empty (<15 bars on first paint) or bar count changes;
           // update(last) alone never draws a line on an empty series.
           const rsi = rsiSeriesRef.current;
@@ -283,21 +273,27 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
     });
     chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
 
-    const sma20 = chart.addSeries(LineSeries, {
-      color: '#f59e0b', lineWidth: 1,
+    const bbUpper = chart.addSeries(LineSeries, {
+      color: 'rgba(59, 130, 246, 0.5)', lineWidth: 1, lineStyle: 2,
       crosshairMarkerVisible: false, priceLineVisible: false, lastValueVisible: false,
     });
 
-    const sma50 = chart.addSeries(LineSeries, {
-      color: '#8b5cf6', lineWidth: 1,
+    const bbMid = chart.addSeries(LineSeries, {
+      color: 'rgba(245, 158, 11, 0.8)', lineWidth: 1,
+      crosshairMarkerVisible: false, priceLineVisible: false, lastValueVisible: false,
+    });
+
+    const bbLower = chart.addSeries(LineSeries, {
+      color: 'rgba(59, 130, 246, 0.5)', lineWidth: 1, lineStyle: 2,
       crosshairMarkerVisible: false, priceLineVisible: false, lastValueVisible: false,
     });
 
     chartRef.current = chart;
     seriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
-    sma20SeriesRef.current = sma20;
-    sma50SeriesRef.current = sma50;
+    bbUpperSeriesRef.current = bbUpper;
+    bbMidSeriesRef.current = bbMid;
+    bbLowerSeriesRef.current = bbLower;
 
     // RSI chart — autoSize + ResizeObserver ignores resize(); host can be 0×0 when absolute. Use fixed size + RO.
     const rsiHostEl = rsiChartHostRef.current;
@@ -352,7 +348,7 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
       rsiResizeObs.disconnect();
       chart.remove(); rsiChart.remove();
       chartRef.current = null; seriesRef.current = null;
-      volumeSeriesRef.current = null; sma20SeriesRef.current = null; sma50SeriesRef.current = null;
+      volumeSeriesRef.current = null; bbUpperSeriesRef.current = null; bbMidSeriesRef.current = null; bbLowerSeriesRef.current = null;
       rsiChartRef.current = null; rsiSeriesRef.current = null;
     };
   }, []);
@@ -375,8 +371,9 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
     rsiPointCountRef.current = 0;
     seriesRef.current?.setData([]);
     volumeSeriesRef.current?.setData([]);
-    sma20SeriesRef.current?.setData([]);
-    sma50SeriesRef.current?.setData([]);
+    bbUpperSeriesRef.current?.setData([]);
+    bbMidSeriesRef.current?.setData([]);
+    bbLowerSeriesRef.current?.setData([]);
     rsiSeriesRef.current?.setData([]);
     if (priceRef.current) { priceRef.current.innerHTML = '...'; priceRef.current.className = 'chart-price'; }
     const handler = createHandler();
@@ -405,8 +402,9 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
     // Clear and refetch with new interval
     seriesRef.current?.setData([]);
     volumeSeriesRef.current?.setData([]);
-    sma20SeriesRef.current?.setData([]);
-    sma50SeriesRef.current?.setData([]);
+    bbUpperSeriesRef.current?.setData([]);
+    bbMidSeriesRef.current?.setData([]);
+    bbLowerSeriesRef.current?.setData([]);
     rsiSeriesRef.current?.setData([]);
     fetchSymbolData(activeSymbol, newInterval);
   }, [activeSymbol, fetchSymbolData]);
@@ -469,8 +467,13 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
 
       <div className="chart-body">
         <div className="chart-indicators-legend">
-          {indicators.sma20 && <span className="legend-item" style={{ color: '#f59e0b' }}>● SMA 20</span>}
-          {indicators.sma50 && <span className="legend-item" style={{ color: '#8b5cf6' }}>● SMA 50</span>}
+          {indicators.bb && (
+            <span className="legend-item">
+              <span style={{ color: '#3b82f6' }}>— BB Upper</span>
+              <span style={{ margin: '0 6px', color: '#f59e0b' }}>— BB Mid</span>
+              <span style={{ color: '#3b82f6' }}>— BB Lower</span>
+            </span>
+          )}
         </div>
         <div className="chart-container-main" ref={containerRef} />
         <div className="chart-container-rsi" ref={rsiPanelRef}>
