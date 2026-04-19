@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useLayoutEffect } from 'react';
 import MultiChart from '@/components/MultiChart';
 import { ChartInterval } from '@/lib/types';
 import { SYMBOLS } from '@/lib/symbols';
@@ -25,11 +25,28 @@ const GRID_OPTIONS = [
 
 export default function HomePage() {
   const [interval, setInterval] = useState<ChartInterval>('5m');
-  const [gridCols, setGridCols] = useState(4);
+  const [gridCols, setGridCols] = useState(3);
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [compareSymbols, setCompareSymbols] = useState<[string, string]>(
     [SYMBOLS[0], SYMBOLS[1] || SYMBOLS[0]]
   );
+  const [isDark, setIsDark] = useState(true);
+
+  // Apply theme on mount (before first paint to avoid flash)
+  useLayoutEffect(() => {
+    const saved = localStorage.getItem('theme');
+    const dark = saved ? saved === 'dark' : true;
+    setIsDark(dark);
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  }, []);
+
+  // Persist and apply theme whenever it changes
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  }, [isDark]);
+
+  const toggleTheme = useCallback(() => setIsDark((d) => !d), []);
   const { isLoading, lastUpdate, error, refetch } = useDataFetcher(SYMBOLS, interval);
 
   // FPS monitor — dev only
@@ -63,6 +80,18 @@ export default function HomePage() {
 
           {/* ── Center Controls ── */}
           <div className="header-controls">
+            {/* Theme Toggle */}
+            <button
+              className="theme-toggle-btn"
+              onClick={toggleTheme}
+              title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            >
+              <span className="theme-toggle-icon">{isDark ? '☀️' : '🌙'}</span>
+              {isDark ? 'Light' : 'Dark'}
+            </button>
+
+            <div className="fs-divider" style={{ margin: '0 8px', height: '24px' }} />
+
             {/* Compare Mode */}
             <button
               className="control-action-btn"
