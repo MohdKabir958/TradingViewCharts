@@ -92,11 +92,10 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
   const initializedRef = useRef(false);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
-  // Sync global interval
-  useEffect(() => {
-    if (!isFullscreen) setChartInterval(globalInterval);
-  }, [globalInterval, isFullscreen]);
-
+  // Sync global interval according to React 18 derived state best practices
+  if (!isFullscreen && chartInterval !== globalInterval) {
+    setChartInterval(globalInterval);
+  }
   // BB visibility
   useEffect(() => {
     bbUpperRef.current?.applyOptions({ visible: indicators.bb });
@@ -148,38 +147,25 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
     return throttle((_sym: string, state: SymbolState) => {
       scheduleChartUpdate(() => {
         if (!seriesRef.current || !chartRef.current) return;
-        const { candles: allCandles } = state;
-        if (allCandles.length === 0) return;
-
-        // Show only the most recent trading session (use last candle's IST date)
-        // This fixes blank charts after midnight when "today" has no candles yet
-        const lastTime = allCandles[allCandles.length - 1].time;
-        const lastISTDate = new Date((lastTime + 19800) * 1000);
-        lastISTDate.setUTCHours(0, 0, 0, 0);
-        const sessionStartUnix = Math.floor(lastISTDate.getTime() / 1000) - 19800;
-        const candles = allCandles.filter((c) => c.time >= sessionStartUnix);
+        const { candles } = state;
         if (candles.length === 0) return;
 
-        // Shift UTC timestamps → IST display (+5:30 = +19800s)
-        const IST = 19800;
-        const t = (unix: number) => (unix + IST) as Time;
-
         const formatted: CandlestickData<Time>[] = candles.map((c) => ({
-          time: t(c.time), open: c.open, high: c.high, low: c.low, close: c.close,
+          time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close,
         }));
 
         const volumeData = candles.map((c) => ({
-          time: t(c.time),
+          time: c.time as Time,
           value: c.volume || 0,
           color: c.close >= c.open ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)',
         }));
 
         const bbRaw = calculateBollingerBands(candles, 20, 2);
-        const bbUpperData = bbRaw.map((d) => ({ time: t(d.time), value: d.upper }));
-        const bbMiddleData = bbRaw.map((d) => ({ time: t(d.time), value: d.middle }));
-        const bbLowerData = bbRaw.map((d) => ({ time: t(d.time), value: d.lower }));
+        const bbUpperData = bbRaw.map((d) => ({ time: d.time as Time, value: d.upper }));
+        const bbMiddleData = bbRaw.map((d) => ({ time: d.time as Time, value: d.middle }));
+        const bbLowerData = bbRaw.map((d) => ({ time: d.time as Time, value: d.lower }));
 
-        const rsiData = calculateRSI(candles).map((d) => ({ time: t(d.time), value: d.value }));
+        const rsiData = calculateRSI(candles).map((d) => ({ time: d.time as Time, value: d.value }));
 
         if (!initializedRef.current) {
           seriesRef.current.setData(formatted);

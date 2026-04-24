@@ -131,6 +131,23 @@ body {
 }
 
 /* ─── Dashboard Layout ────────────────────────────────────────────── */
+.chart-container-main {
+  width: 100%;
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.chart-container-rsi {
+  height: 90px;
+  flex: 0 0 auto;
+}
+
+.chart-body {
+  display: flex;
+  flex-direction: column;
+}
+
 .dashboard {
   width: 100%;
   min-height: 100vh;
@@ -344,6 +361,9 @@ body {
               box-shadow var(--transition-normal),
               transform var(--transition-normal);
   box-shadow: var(--shadow-card);
+  aspect-ratio: 9 / 15; /* Close to 9:16 but avoids completely extreme heights on large ultrawide monitors */
+  display: flex;
+  flex-direction: column;
 }
 
 .chart-card:hover {
@@ -449,6 +469,10 @@ body {
 /* ─── Chart Body ──────────────────────────────────────────────────── */
 .chart-body {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .chart-indicators-legend {
@@ -475,10 +499,11 @@ body {
 
 .chart-container-rsi {
   width: 100%;
-  height: 72px;
-  min-height: 72px;
+  height: 90px;
+  min-height: 90px;
   position: relative;
   border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 /* Dedicated mount: Lightweight Charts measures this node; keep it empty besides library DOM. */
@@ -833,6 +858,7 @@ body {
   margin: 0 !important;
   background: var(--bg-primary) !important;
   animation: fullscreenIn 0.3s ease-out;
+  aspect-ratio: auto !important;
 }
 
 .chart-card-fullscreen .chart-card-header {
@@ -842,11 +868,13 @@ body {
 }
 
 .chart-card-fullscreen .chart-container-main {
-  height: calc(100vh - 200px) !important;
+  height: calc(100vh - 240px) !important;
+  flex: 1 1 auto !important;
 }
 
 .chart-card-fullscreen .chart-container-rsi {
-  height: 120px !important;
+  height: 140px !important;
+  flex-shrink: 0 !important;
 }
 
 .chart-card-fullscreen .chart-ctrl-btn {

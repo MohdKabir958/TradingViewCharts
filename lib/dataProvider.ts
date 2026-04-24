@@ -1,17 +1,26 @@
-import YahooFinance from 'yahoo-finance2';
-import type { ChartResultArrayQuote } from 'yahoo-finance2/modules/chart';
 import { Redis } from '@upstash/redis';
 import { clampGlitchCandles } from './candleSanitize';
 import { CandleData, ChartInterval, SymbolData, MultiSymbolData } from './types';
-
-// ─── Yahoo Finance Client (singleton) ──────────────────────────────
-const yahooFinance = new YahooFinance();
 
 // ─── Upstash Redis (optional — omit env in dev/small deploys) ─────
 const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
 const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
 const redis: Redis | null =
   redisUrl && redisToken ? new Redis({ url: redisUrl, token: redisToken }) : null;
+
+// ─── Browser-like headers to bypass Vercel/datacenter IP blocks ────
+// Yahoo Finance blocks cloud IPs; spoofing a real browser User-Agent fixes this.
+const YAHOO_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'application/json, text/plain, */*',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Origin': 'https://finance.yahoo.com',
+  'Referer': 'https://finance.yahoo.com/',
+  'Cache-Control': 'no-cache',
+  'Pragma': 'no-cache',
+};
 
 // ─── Cache Configuration ───────────────────────────────────────────
 const CACHE_TTL_SECONDS = 30; // 30 seconds cache lifetime
@@ -33,44 +42,86 @@ function getYahooInterval(interval: ChartInterval): YahooInterval {
   return map[interval];
 }
 
-function getPeriodDays(interval: ChartInterval): number {
-  const map: Record<ChartInterval, number> = {
-    '1m': 5,
-    '5m': 5,
-    '15m': 30,
-    '1h': 30,
-    '1d': 180,
+
+// ─── Yahoo Finance v8 chart URL builder ───────────────────────────
+// Using direct fetch() instead of the SDK so we can set browser-like headers.
+// The SDK's internal HTTP client gets blocked by Yahoo on cloud/Vercel IPs.
+function buildYahooUrl(symbol: string, interval: ChartInterval): string {
+  const yahooInterval = getYahooInterval(interval);
+  // Fetch 5d of raw data — filterToLatestTradingDay() will trim to the newest session only.
+  // Using 5d (not 1d) ensures we always have a previous trading day when market is closed.
+  const rangeMap: Record<ChartInterval, string> = {
+    '1m':  '5d',
+    '5m':  '5d',
+    '15m': '5d',
+    '1h':  '5d',
+    '1d':  '5d',   // daily: show last 5 trading days for context
   };
-  return map[interval];
+  const range = rangeMap[interval];
+  return (
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
+    `?interval=${yahooInterval}&range=${range}&includePrePost=false&events=none`
+  );
 }
 
-// ─── Normalize Yahoo Data ──────────────────────────────────────────
-function normalizeCandles(quotes: ChartResultArrayQuote[]): CandleData[] {
-  return quotes
-    .filter(
-      (q) =>
-        q.date != null &&
-        q.open != null &&
-        q.high != null &&
-        q.low != null &&
-        q.close != null
-    )
-    .map((q) => ({
-      time: Math.floor(new Date(q.date).getTime() / 1000),
-      open: Number(q.open),
-      high: Number(q.high),
-      low: Number(q.low),
-      close: Number(q.close),
-      volume: q.volume != null ? Number(q.volume) : undefined,
-    }))
-    .filter(
-      (c) =>
-        Number.isFinite(c.time) &&
-        Number.isFinite(c.open) &&
-        Number.isFinite(c.high) &&
-        Number.isFinite(c.low) &&
-        Number.isFinite(c.close)
-    );
+const IST_OFFSET_SEC = 5.5 * 60 * 60; // 19800 seconds
+
+// ─── Normalize Yahoo v8 JSON response ─────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeCandles(result: any): CandleData[] {
+  const chart = result?.chart?.result?.[0];
+  if (!chart) return [];
+
+  const timestamps: number[] = chart.timestamp ?? [];
+  const q = chart.indicators?.quote?.[0] ?? {};
+  const opens: number[] = q.open ?? [];
+  const highs: number[] = q.high ?? [];
+  const lows: number[] = q.low ?? [];
+  const closes: number[] = q.close ?? [];
+  const volumes: number[] = q.volume ?? [];
+
+  const candles: CandleData[] = [];
+  for (let i = 0; i < timestamps.length; i++) {
+    const time = timestamps[i];
+    const open = opens[i];
+    const high = highs[i];
+    const low = lows[i];
+    const close = closes[i];
+    if (
+      time != null && open != null && high != null &&
+      low != null && close != null &&
+      Number.isFinite(open) && Number.isFinite(high) &&
+      Number.isFinite(low) && Number.isFinite(close)
+    ) {
+      candles.push({
+        // Shift UTC → IST so chart x-axis shows 09:15–15:30 IST natively
+        time: time + IST_OFFSET_SEC,
+        open,
+        high,
+        low,
+        close,
+        volume: volumes[i] != null ? Number(volumes[i]) : undefined,
+      });
+    }
+  }
+  return candles;
+}
+
+// ─── Filter to latest trading day (IST) ──────────────────────────────
+// Yahoo's 5d range for a 5-minute interval includes multi-day data.
+// We find the latest trading date in the fetched candles (in IST UTC+5:30)
+// and discard everything from earlier dates.
+// This gives: live market → today's candles; closed market → last session.
+
+function filterToLatestTradingDay(candles: CandleData[]): CandleData[] {
+  if (candles.length === 0) return candles;
+
+  // Timestamps are already IST (pre-shifted in normalizeCandles),
+  // so we just floor-divide by 86400 to get the IST day number.
+  const dayOf = (t: number) => Math.floor(t / 86400);
+
+  const latestDay = dayOf(candles[candles.length - 1].time);
+  return candles.filter((c) => dayOf(c.time) === latestDay);
 }
 
 // ─── Redis Cache Helpers ───────────────────────────────────────────
@@ -121,23 +172,47 @@ async function fetchSingleSymbol(
     return inFlight;
   }
 
-  // 3. Create new request
+  // 3. Create new request using direct fetch() with browser-like headers
   const requestPromise = (async (): Promise<SymbolData> => {
     try {
-      const yahooInterval = getYahooInterval(interval);
-      const periodDays = getPeriodDays(interval);
+      const url = buildYahooUrl(symbol, interval);
 
-      const period1 = new Date();
-      period1.setDate(period1.getDate() - periodDays);
+      // Two attempts — Yahoo occasionally returns non-JSON on first hit
+      let json: unknown = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const res = await fetch(url, {
+          headers: YAHOO_HEADERS,
+          // Disable Next.js fetch cache — we manage caching via Redis
+          cache: 'no-store',
+        });
 
-      const result = await yahooFinance.chart(symbol, {
-        period1,
-        interval: yahooInterval,
-      });
+        if (!res.ok) {
+          console.error(`[DataProvider] ${symbol} HTTP ${res.status} (attempt ${attempt + 1})`);
+          if (attempt === 0) {
+            await new Promise((r) => setTimeout(r, 300));
+            continue;
+          }
+          throw new Error(`Yahoo Finance returned HTTP ${res.status}`);
+        }
 
-      const quotes = result?.quotes;
-      const raw = normalizeCandles(Array.isArray(quotes) ? quotes : []);
-      const candles = clampGlitchCandles(raw, interval);
+        const text = await res.text();
+        try {
+          json = JSON.parse(text);
+          break;
+        } catch {
+          if (attempt === 0) {
+            await new Promise((r) => setTimeout(r, 300));
+            continue;
+          }
+          throw new Error('Yahoo Finance returned non-JSON response');
+        }
+      }
+
+      const raw = normalizeCandles(json);
+      // For intraday: keep only the latest trading day's candles
+      // For daily (1d): keep all bars so the daily chart has context
+      const filtered = interval !== '1d' ? filterToLatestTradingDay(raw) : raw;
+      const candles = clampGlitchCandles(filtered, interval);
 
       const symbolData: SymbolData = {
         symbol,
@@ -153,7 +228,7 @@ async function fetchSingleSymbol(
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error fetching data';
 
-      // Server-side error log — goes to server logs only
+      // Server-side error log — goes to Vercel function logs
       console.error(`[DataProvider] ${symbol}:`, errorMessage);
 
       return {
