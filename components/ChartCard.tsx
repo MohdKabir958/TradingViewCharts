@@ -151,10 +151,13 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
         const { candles: allCandles } = state;
         if (allCandles.length === 0) return;
 
-        // Show only today's candles for readability
-        const nowMs = Date.now();
-        const todayStartUnix = Math.floor(new Date(new Date(nowMs).setHours(0, 0, 0, 0)).getTime() / 1000);
-        const candles = allCandles.filter((c) => c.time >= todayStartUnix);
+        // Show only the most recent trading session (use last candle's IST date)
+        // This fixes blank charts after midnight when "today" has no candles yet
+        const lastTime = allCandles[allCandles.length - 1].time;
+        const lastISTDate = new Date((lastTime + 19800) * 1000);
+        lastISTDate.setUTCHours(0, 0, 0, 0);
+        const sessionStartUnix = Math.floor(lastISTDate.getTime() / 1000) - 19800;
+        const candles = allCandles.filter((c) => c.time >= sessionStartUnix);
         if (candles.length === 0) return;
 
         // Shift UTC timestamps → IST display (+5:30 = +19800s)
