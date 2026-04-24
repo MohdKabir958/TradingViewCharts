@@ -47,6 +47,8 @@ function throttle<T extends (...args: Parameters<T>) => void>(fn: T, ms: number)
 
 function getCurrencySymbol(symbol: string): string {
   if (symbol.endsWith('.NS') || symbol.endsWith('.BO')) return '₹';
+  // Indian indices: ^NSEI, ^NSEBANK, ^BSESN, ^CNX*, ^INDIAVIX, BSE-*
+  if (symbol.startsWith('^') || symbol.startsWith('BSE-')) return '₹';
   return '$';
 }
 
@@ -68,6 +70,7 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
   const [crosshairEnabled, setCrosshairEnabled] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [chartInterval, setChartInterval] = useState<ChartInterval>(globalInterval);
+  const [chartDays, setChartDays] = useState(1);
   const [indicators, setIndicators] = useState<IndicatorToggles>({
     bb: true, volume: true, rsi: true,
   });
@@ -330,9 +333,9 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
     };
   }, []);
 
-  const fetchSymbolData = useCallback(async (symbol: string, interval: string) => {
+  const fetchSymbolData = useCallback(async (symbol: string, interval: string, days: number) => {
     try {
-      const res = await fetch(`/api/charts?symbols=${symbol}&interval=${interval}`);
+      const res = await fetch(`/api/charts?symbols=${symbol}&interval=${interval}&days=${days}`);
       const json = await res.json();
       if (json.success && json.data?.[symbol]) {
         chartStore.update(symbol, json.data[symbol].candles, json.data[symbol].error);
@@ -354,12 +357,11 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
     rsiSeriesRef.current?.setData([]);
     if (priceRef.current) { priceRef.current.innerHTML = '...'; priceRef.current.className = 'chart-price'; }
     const handler = createHandler();
-    const existing = chartStore.get(activeSymbol);
-    if (existing && existing.candles.length > 0) handler(activeSymbol, existing);
-    else fetchSymbolData(activeSymbol, chartInterval);
+    // Always fetch fresh — don't reuse stale store data when days filter changes
+    fetchSymbolData(activeSymbol, chartInterval, chartDays);
     unsubscribeRef.current = chartStore.subscribe(activeSymbol, handler);
     return () => { if (unsubscribeRef.current) { unsubscribeRef.current(); unsubscribeRef.current = null; } };
-  }, [activeSymbol, createHandler, chartInterval, fetchSymbolData]);
+  }, [activeSymbol, createHandler, chartInterval, chartDays, fetchSymbolData]);
 
   const handleSymbolChange = (s: string) => {
     if (s !== activeSymbol) { setActiveSymbol(s); onSymbolChange?.(s); }
@@ -376,8 +378,16 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
     bbMiddleRef.current?.setData([]);
     bbLowerRef.current?.setData([]);
     rsiSeriesRef.current?.setData([]);
-    fetchSymbolData(activeSymbol, newInterval);
-  }, [activeSymbol, fetchSymbolData]);
+    fetchSymbolData(activeSymbol, newInterval, chartDays);
+  }, [activeSymbol, chartDays, fetchSymbolData]);
+
+  const handleDaysChange = useCallback((newDays: number) => {
+    // Clear store so mergeCandles cannot blend old-day data into the new fetch.
+    // The subscribe useEffect fires automatically when chartDays state updates,
+    // so no manual fetchSymbolData call is needed here.
+    chartStore.clearSymbol(activeSymbol);
+    setChartDays(newDays);
+  }, [activeSymbol]);
 
   const handleToggleCrosshair = useCallback(() => {
     if (!chartRef.current) return;
@@ -414,6 +424,8 @@ export default function ChartCard({ symbol: initialSymbol, globalInterval = '5m'
               chartRef={chartRef}
               onToggleCrosshair={handleToggleCrosshair} crosshairEnabled={crosshairEnabled}
               onToggleFullscreen={handleToggleFullscreen} isFullscreen={isFullscreen}
+              chartDays={chartDays}
+              onDaysChange={handleDaysChange}
             />
             <span className="chart-header-spacer" aria-hidden />
             <span className="chart-price" ref={priceRef}>...</span>

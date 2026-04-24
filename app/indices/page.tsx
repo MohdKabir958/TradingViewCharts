@@ -3,22 +3,32 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import ChartCard from '@/components/ChartCard';
+import { ChartInterval } from '@/lib/types';
+import { useDataFetcher } from '@/lib/hooks';
 
 const DEFAULT_INDICES = [
-  { symbol: '^NSEI',      name: 'Nifty 50',         desc: 'NSE Top 50' },
-  { symbol: '^NSEBANK',   name: 'Bank Nifty',        desc: 'Banking Index' },
-  { symbol: '^BSESN',     name: 'Sensex',            desc: 'BSE Top 30' },
-  { symbol: '^CNXIT',     name: 'Nifty IT',          desc: 'IT Sector' },
-  { symbol: '^NSEMDCP50', name: 'Nifty Midcap 50',   desc: 'Midcap Index' },
-  { symbol: '^INDIAVIX',  name: 'India VIX',         desc: 'Volatility Index' },
-  { symbol: '^CNXAUTO',   name: 'Nifty Auto',        desc: 'Automobile Sector' },
-  { symbol: '^CNXPHARMA', name: 'Nifty Pharma',      desc: 'Pharma Sector' },
-  { symbol: '^CNXMETAL',  name: 'Nifty Metal',       desc: 'Metal Sector' },
-  { symbol: '^CNXFMCG',   name: 'Nifty FMCG',        desc: 'FMCG Sector' },
-  { symbol: '^CNXREALTY', name: 'Nifty Realty',      desc: 'Real Estate' },
-  { symbol: '^CNXENERGY', name: 'Nifty Energy',      desc: 'Energy Sector' },
-  { symbol: '^CNXPSUBANK',name: 'PSU Bank',          desc: 'Public Sector Banks' },
-  { symbol: 'BSE-OILGAS.BO',name: 'Oil & Gas',       desc: 'Oil & Gas Sector' },
+  { symbol: '^NSEI',      name: 'Nifty 50',       desc: 'NSE Top 50' },
+  { symbol: '^NSEBANK',   name: 'Bank Nifty',      desc: 'Banking Index' },
+  { symbol: '^BSESN',     name: 'Sensex',          desc: 'BSE Top 30' },
+  { symbol: '^CNXIT',     name: 'Nifty IT',        desc: 'IT Sector' },
+  { symbol: '^NSEMDCP50', name: 'Nifty Midcap 50', desc: 'Midcap Index' },
+  { symbol: '^INDIAVIX',  name: 'India VIX',       desc: 'Volatility Index' },
+  { symbol: '^CNXAUTO',   name: 'Nifty Auto',      desc: 'Automobile Sector' },
+  { symbol: '^CNXPHARMA', name: 'Nifty Pharma',    desc: 'Pharma Sector' },
+  { symbol: '^CNXMETAL',  name: 'Nifty Metal',     desc: 'Metal Sector' },
+  { symbol: '^CNXFMCG',   name: 'Nifty FMCG',     desc: 'FMCG Sector' },
+  { symbol: '^CNXREALTY', name: 'Nifty Realty',    desc: 'Real Estate' },
+  { symbol: '^CNXENERGY', name: 'Nifty Energy',    desc: 'Energy Sector' },
+  { symbol: '^CNXPSUBANK',name: 'PSU Bank',        desc: 'Public Sector Banks' },
+  { symbol: 'BSE-OILGAS.BO', name: 'Oil & Gas',   desc: 'Oil & Gas Sector' },
+];
+
+const INTERVALS: { label: string; value: ChartInterval }[] = [
+  { label: '1m',  value: '1m' },
+  { label: '5m',  value: '5m' },
+  { label: '15m', value: '15m' },
+  { label: '1H',  value: '1h' },
+  { label: '1D',  value: '1d' },
 ];
 
 interface SearchResult {
@@ -28,14 +38,17 @@ interface SearchResult {
 }
 
 export default function IndicesPage() {
-  const [indices, setIndices] = useState(DEFAULT_INDICES.map(i => i.symbol));
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [searching, setSearching] = useState(false);
+  const [indices, setIndices]       = useState(DEFAULT_INDICES.map(i => i.symbol));
+  const [interval, setInterval]     = useState<ChartInterval>('5m');
+  const [query, setQuery]           = useState('');
+  const [results, setResults]       = useState<SearchResult[]>([]);
+  const [searching, setSearching]   = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark]         = useState(false);
 
-  // Sync dark theme from localStorage / html attribute
+  // Auto-refresh every 30s — keeps indices data live same as main dashboard
+  useDataFetcher(indices, interval);
+
   useEffect(() => {
     const current = document.documentElement.getAttribute('data-theme');
     setIsDark(current === 'dark');
@@ -67,9 +80,7 @@ export default function IndicesPage() {
 
   const addIndex = (symbol: string) => {
     if (!indices.includes(symbol)) setIndices(prev => [...prev, symbol]);
-    setQuery('');
-    setResults([]);
-    setShowDropdown(false);
+    setQuery(''); setResults([]); setShowDropdown(false);
   };
 
   const removeIndex = (symbol: string) => {
@@ -78,7 +89,7 @@ export default function IndicesPage() {
 
   return (
     <div className="dashboard">
-      {/* Header */}
+      {/* ── Header ── */}
       <header className="header">
         <div className="header-inner">
           <div className="header-title">
@@ -88,7 +99,11 @@ export default function IndicesPage() {
 
           {/* Search */}
           <div style={{ position: 'relative', flex: 1, maxWidth: 360 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '6px 12px' }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              background: 'var(--bg-surface)', border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-sm)', padding: '6px 12px',
+            }}>
               <span style={{ color: 'var(--text-muted)' }}>🔍</span>
               <input
                 type="text"
@@ -134,8 +149,22 @@ export default function IndicesPage() {
             )}
           </div>
 
-          {/* Right controls */}
-          <div className="header-status" style={{ gap: 8 }}>
+          {/* Interval selector + right controls */}
+          <div className="header-controls" style={{ gap: 'var(--gap-md)' }}>
+            <div className="control-group">
+              <span className="control-label">Timeframe</span>
+              <div className="control-tabs">
+                {INTERVALS.map(tf => (
+                  <button
+                    key={tf.value}
+                    className={`control-tab ${interval === tf.value ? 'active' : ''}`}
+                    onClick={() => setInterval(tf.value)}
+                  >
+                    {tf.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <button
               className="control-action-btn"
               onClick={() => setIsDark(d => !d)}
@@ -151,7 +180,7 @@ export default function IndicesPage() {
         </div>
       </header>
 
-      {/* Indices tag pills */}
+      {/* Index filter pills */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '12px 24px 0' }}>
         {DEFAULT_INDICES.map(idx => (
           <button
@@ -172,29 +201,24 @@ export default function IndicesPage() {
         ))}
       </div>
 
-      {/* Index charts grid */}
+      {/* Chart grid — same 9:16 cards as main dashboard */}
       <main>
-        <div className="chart-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+        <div className="chart-grid indices-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
           {indices.map(symbol => (
-            <div key={symbol} style={{ position: 'relative' }}>
-              <ChartCard symbol={symbol} globalInterval="1d" />
-              <button
-                onClick={() => removeIndex(symbol)}
-                title="Remove"
-                style={{
-                  position: 'absolute', top: 6, right: 4, zIndex: 10,
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: 'var(--text-muted)', fontSize: '0.7rem', padding: '2px 4px',
-                  opacity: 0.5,
-                }}
-              >✕</button>
-            </div>
+            <ChartCard
+              key={symbol}
+              symbol={symbol}
+              globalInterval={interval}
+              onSymbolChange={newSym => {
+                setIndices(prev => prev.map(s => s === symbol ? newSym : s));
+              }}
+            />
           ))}
         </div>
       </main>
 
       <footer className="footer">
-        Indian Market Indices • Data via Yahoo Finance • Click a pill to add/remove an index
+        Indian Market Indices • Data via Yahoo Finance • Click a pill to add/remove
       </footer>
     </div>
   );

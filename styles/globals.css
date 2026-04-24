@@ -366,6 +366,22 @@ body {
   flex-direction: column;
 }
 
+/* ─── Indices Page: landscape cards so rows fit in viewport ──────── */
+.indices-grid .chart-card {
+  aspect-ratio: 16 / 9;
+}
+
+.indices-grid .chart-container-main {
+  height: auto;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.indices-grid .chart-container-rsi {
+  height: 64px;
+  min-height: 64px;
+}
+
 .chart-card:hover {
   border-color: var(--border-glow);
   box-shadow: var(--shadow-hover);
@@ -844,6 +860,63 @@ body {
   background: var(--border-color);
   border: none;
   padding: 0;
+}
+
+/* ── Days selector section inside the ⋮ dropdown ── */
+.chart-menu-section {
+  padding: 6px 8px 4px;
+}
+
+.chart-menu-section-label {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.chart-menu-days {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.chart-menu-day-btn {
+  flex: 1;
+  min-width: 32px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.chart-menu-day-btn:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-color: var(--accent-blue);
+}
+
+.chart-menu-day-btn.active {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.chart-menu-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-color);
 }
 
 /* ─── Fullscreen Mode ─────────────────────────────────────────────── */

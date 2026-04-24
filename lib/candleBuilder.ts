@@ -1,6 +1,6 @@
 import { CandleData } from './types';
 
-const MAX_CANDLES = 500;
+const MAX_CANDLES = 2000;
 
 /**
  * Merges incoming candles with existing ones.

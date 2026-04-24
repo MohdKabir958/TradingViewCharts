@@ -100,6 +100,13 @@ class ChartStore {
   clear(): void {
     this.data.clear();
   }
+
+  /**
+   * Clear data for a single symbol (e.g. when days filter changes)
+   */
+  clearSymbol(symbol: string): void {
+    this.data.delete(symbol);
+  }
 }
 
 // Singleton instance

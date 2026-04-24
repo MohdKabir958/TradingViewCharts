@@ -4,12 +4,22 @@ import { IChartApi } from 'lightweight-charts';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+const DAY_OPTIONS = [
+  { label: '1D', value: 1 },
+  { label: '2D', value: 2 },
+  { label: '3D', value: 3 },
+  { label: '5D', value: 5 },
+  { label: '10D', value: 10 },
+];
+
 interface ChartControlsProps {
   chartRef: React.RefObject<IChartApi | null>;
   onToggleCrosshair: () => void;
   crosshairEnabled: boolean;
   onToggleFullscreen: () => void;
   isFullscreen: boolean;
+  chartDays: number;
+  onDaysChange: (days: number) => void;
 }
 
 export default function ChartControls({
@@ -18,6 +28,8 @@ export default function ChartControls({
   crosshairEnabled,
   onToggleFullscreen,
   isFullscreen,
+  chartDays,
+  onDaysChange,
 }: ChartControlsProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -143,6 +155,23 @@ export default function ChartControls({
     typeof document !== 'undefined' &&
     createPortal(
       <div ref={menuRef} className="chart-menu-dropdown" role="menu">
+        {/* ── Days selector ── */}
+        <div className="chart-menu-section">
+          <span className="chart-menu-section-label">Last N Days</span>
+          <div className="chart-menu-days">
+            {DAY_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`chart-menu-day-btn ${chartDays === opt.value ? 'active' : ''}`}
+                onClick={() => { onDaysChange(opt.value); setOpen(false); }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="chart-menu-divider" />
         <button type="button" className="chart-menu-item" role="menuitem" onClick={handleFitContent}>
           ⊞ Fit all candles
         </button>

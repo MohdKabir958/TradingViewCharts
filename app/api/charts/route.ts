@@ -33,7 +33,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const data = await fetchMultipleSymbols(symbols, interval);
+    // Parse days (number of trading days to show), default 1
+    const daysParam = parseInt(searchParams.get('days') || '1', 10);
+    const days = Number.isFinite(daysParam) && daysParam >= 1 ? Math.min(daysParam, 60) : 1;
+
+    const data = await fetchMultipleSymbols(symbols, interval, days);
 
     return NextResponse.json({
       success: true,

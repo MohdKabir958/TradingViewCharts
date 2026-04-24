@@ -46,18 +46,12 @@ function getYahooInterval(interval: ChartInterval): YahooInterval {
 // ─── Yahoo Finance v8 chart URL builder ───────────────────────────
 // Using direct fetch() instead of the SDK so we can set browser-like headers.
 // The SDK's internal HTTP client gets blocked by Yahoo on cloud/Vercel IPs.
-function buildYahooUrl(symbol: string, interval: ChartInterval): string {
+function buildYahooUrl(symbol: string, interval: ChartInterval, days: number): string {
   const yahooInterval = getYahooInterval(interval);
-  // Fetch 5d of raw data — filterToLatestTradingDay() will trim to the newest session only.
-  // Using 5d (not 1d) ensures we always have a previous trading day when market is closed.
-  const rangeMap: Record<ChartInterval, string> = {
-    '1m':  '5d',
-    '5m':  '5d',
-    '15m': '5d',
-    '1h':  '5d',
-    '1d':  '5d',   // daily: show last 5 trading days for context
-  };
-  const range = rangeMap[interval];
+  // Request enough days from Yahoo to satisfy the requested range.
+  // We add 7 extra to account for weekends / holidays with no trading data.
+  const fetchDays = days + 7;
+  const range = `${fetchDays}d`;
   return (
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
     `?interval=${yahooInterval}&range=${range}&includePrePost=false&events=none`
@@ -107,21 +101,28 @@ function normalizeCandles(result: any): CandleData[] {
   return candles;
 }
 
-// ─── Filter to latest trading day (IST) ──────────────────────────────
-// Yahoo's 5d range for a 5-minute interval includes multi-day data.
-// We find the latest trading date in the fetched candles (in IST UTC+5:30)
+// ─── Filter to latest N trading days (IST) ──────────────────────────────
+// Yahoo's range data for intraday intervals includes multi-day data.
+// We find the latest N distinct trading dates in the fetched candles (in IST UTC+5:30)
 // and discard everything from earlier dates.
-// This gives: live market → today's candles; closed market → last session.
+// This gives: live market → today + (N-1) previous sessions; closed → last N sessions.
 
-function filterToLatestTradingDay(candles: CandleData[]): CandleData[] {
+function filterToLatestTradingDay(candles: CandleData[], days: number = 1): CandleData[] {
   if (candles.length === 0) return candles;
 
   // Timestamps are already IST (pre-shifted in normalizeCandles),
   // so we just floor-divide by 86400 to get the IST day number.
   const dayOf = (t: number) => Math.floor(t / 86400);
 
-  const latestDay = dayOf(candles[candles.length - 1].time);
-  return candles.filter((c) => dayOf(c.time) === latestDay);
+  // Collect all distinct trading day numbers in descending order
+  const daySet = new Set<number>();
+  for (const c of candles) daySet.add(dayOf(c.time));
+  const sortedDays = Array.from(daySet).sort((a, b) => b - a);
+
+  // Keep only the most recent `days` trading day numbers
+  const keepDays = new Set(sortedDays.slice(0, days));
+
+  return candles.filter((c) => keepDays.has(dayOf(c.time)));
 }
 
 // ─── Redis Cache Helpers ───────────────────────────────────────────
@@ -156,9 +157,10 @@ async function setToCache(symbol: string, interval: ChartInterval, data: SymbolD
 // ─── Single Symbol Fetch ───────────────────────────────────────────
 async function fetchSingleSymbol(
   symbol: string,
-  interval: ChartInterval
+  interval: ChartInterval,
+  days: number = 1
 ): Promise<SymbolData> {
-  const key = `${symbol}:${interval}`;
+  const key = `${symbol}:${interval}:${days}`;
 
   // 1. Check Redis cache first
   const cached = await getFromCache(symbol, interval);
@@ -175,7 +177,7 @@ async function fetchSingleSymbol(
   // 3. Create new request using direct fetch() with browser-like headers
   const requestPromise = (async (): Promise<SymbolData> => {
     try {
-      const url = buildYahooUrl(symbol, interval);
+      const url = buildYahooUrl(symbol, interval, days);
 
       // Two attempts — Yahoo occasionally returns non-JSON on first hit
       let json: unknown = null;
@@ -209,9 +211,9 @@ async function fetchSingleSymbol(
       }
 
       const raw = normalizeCandles(json);
-      // For intraday: keep only the latest trading day's candles
+      // For intraday: keep only the requested number of trading days
       // For daily (1d): keep all bars so the daily chart has context
-      const filtered = interval !== '1d' ? filterToLatestTradingDay(raw) : raw;
+      const filtered = interval !== '1d' ? filterToLatestTradingDay(raw, days) : raw;
       const candles = clampGlitchCandles(filtered, interval);
 
       const symbolData: SymbolData = {
@@ -254,14 +256,15 @@ const YAHOO_BATCH_PAUSE_MS = 150;
 
 export async function fetchMultipleSymbols(
   symbols: string[],
-  interval: ChartInterval = '5m'
+  interval: ChartInterval = '5m',
+  days: number = 1
 ): Promise<MultiSymbolData> {
   const data: MultiSymbolData = {};
 
   for (let i = 0; i < symbols.length; i += YAHOO_BATCH_SIZE) {
     const slice = symbols.slice(i, i + YAHOO_BATCH_SIZE);
     const results = await Promise.allSettled(
-      slice.map((symbol) => fetchSingleSymbol(symbol, interval))
+      slice.map((symbol) => fetchSingleSymbol(symbol, interval, days))
     );
 
     results.forEach((result, j) => {
